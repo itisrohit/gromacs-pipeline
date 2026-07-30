@@ -33,16 +33,16 @@ done
 
 FINGERPRINT=$(
     for f in "${FILES_TO_HASH[@]}"; do
-        if [ -f "$f" ]; then
-            sha256sum "$f" 2>/dev/null || shasum -a 256 "$f" 2>/dev/null
-        fi
+        [ -f "$f" ] && sha256sum "$f" 2>/dev/null
     done | sha256sum 2>/dev/null | cut -d' ' -f1
-    if [ -z "$FINGERPRINT" ]; then
+)
+if [ -z "$FINGERPRINT" ]; then
+    FINGERPRINT=$(
         for f in "${FILES_TO_HASH[@]}"; do
             [ -f "$f" ] && shasum -a 256 "$f"
         done | shasum -a 256 | cut -d' ' -f1
-    fi
-)
+    )
+fi
 
 if [ "${1:-}" = "--check" ]; then
     echo "$FINGERPRINT"

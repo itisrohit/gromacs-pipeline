@@ -15,14 +15,12 @@ run_stage_prepare() {
         exit 1
     fi
 
-    # Strip water, keep protein and DNA atoms, assign chains
+    # Strip water only. Keep everything else (protein, DNA, structural ions).
     awk '
     /^ATOM|^HETATM/ {
         resname = substr($0,18,3)
         gsub(/ /,"",resname)
-        # Skip water, ions
         if (resname == "HOH" || resname == "SOL" || resname == "WAT" || resname == "TIP3" || resname == "SPC") next
-        if (resname == "K" || resname == "K+" || resname == "NA" || resname == "CL" || resname == "ZN") next
         print
     }
     /^TER|^END/ { print }

@@ -1,17 +1,16 @@
 # GROMACS HPC Pipeline Configuration
-# Edit this file for each project.
+# BLM-cMYC 1ns test run
 
-# ── Cluster Profile ──
-CLUSTER="generic-pbs"
-PROJECT="my_project"
+CLUSTER="iitd"
+PROJECT="BLM-cMYC"
 
 # ── Input Files ──
 PDB="input/system.pdb"
-EM_MDP="input/em.mdp"
-NVT_MDP="input/nvt.mdp"
-NPT_MDP="input/npt.mdp"
-MD_MDP="input/md.mdp"
-EXTRA_ITPS=""                    # optional: custom topology includes (space-separated)
+EM_MDP="mdp/em.mdp"
+NVT_MDP="mdp/nvt.mdp"
+NPT_MDP="mdp/npt.mdp"
+MD_MDP="mdp/md.mdp"
+EXTRA_ITPS=""
 
 # ── System ──
 FORCEFIELD="amber14sb"
@@ -23,22 +22,22 @@ CATION="K"
 ANION="CL"
 
 # ── Simulation Length ──
-PRODUCTION_NS=100
-CHUNK_NS=50
+PRODUCTION_NS=1
+CHUNK_NS=1
 
 # ── Resources ──
 SETUP_CPUS=8
-SETUP_MEM="8GB"
+SETUP_MEM="4GB"
 SETUP_WALLTIME="00:30:00"
 EQ_CPUS=8
 EQ_GPUS=1
-EQ_MEM="16GB"
+EQ_MEM="8GB"
 EQ_WALLTIME="02:00:00"
 PROD_CPUS=8
 PROD_GPUS=1
-PROD_MEM="16GB"
-PROD_WALLTIME="24:00:00"
+PROD_MEM="8GB"
+PROD_WALLTIME="04:00:00"
 
 # ── Scheduler ──
-ACCOUNT="my_account"
+ACCOUNT="helicases.spons"
 QUEUE="standard"

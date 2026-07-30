@@ -84,6 +84,7 @@ source config.sh
 source profiles/$CLUSTER.sh
 source lib/gmx.sh
 source lib/stages.sh
+. /etc/profile.d/modules.sh 2>/dev/null || true
 for mod in "${MODULES[@]}"; do
     module load "$mod" 2>/dev/null || echo "WARN: module $mod not found"
 done
@@ -125,6 +126,7 @@ source config.sh
 source profiles/$CLUSTER.sh
 source lib/gmx.sh
 source lib/stages.sh
+. /etc/profile.d/modules.sh 2>/dev/null || true
 for mod in "${MODULES[@]}"; do
     module load "$mod" 2>/dev/null || echo "WARN: module $mod not found"
 done
@@ -159,6 +161,7 @@ source config.sh
 source profiles/$CLUSTER.sh
 source lib/gmx.sh
 source lib/stages.sh
+. /etc/profile.d/modules.sh 2>/dev/null || true
 for mod in "${MODULES[@]}"; do
     module load "$mod" 2>/dev/null || echo "WARN: module $mod not found"
 done
