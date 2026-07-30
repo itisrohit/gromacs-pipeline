@@ -6,11 +6,12 @@ CLUSTER="generic-pbs"
 PROJECT="my_project"
 
 # ── Input Files ──
-PDB="input/complex.pdb"
+PDB="input/system.pdb"
 EM_MDP="input/em.mdp"
 NVT_MDP="input/nvt.mdp"
 NPT_MDP="input/npt.mdp"
 MD_MDP="input/md.mdp"
+EXTRA_ITPS=""                    # optional: custom topology includes (space-separated)
 
 # ── System ──
 FORCEFIELD="amber14sb"

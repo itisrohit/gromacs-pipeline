@@ -36,12 +36,42 @@ cmd_submit() {
     local dep_setup=""
     local dep_eq=""
 
+    # ── Helper: check if a phase is complete by output files ──
+    # Used when state says "running" but outputs exist (previous run
+    # completed without updating state). This avoids no-op resubmissions.
+    phase_is_done() {
+        local p="$1"
+        case "$p" in
+            # Setup completes when the last stage (index) produces its output.
+            # All prior stages must succeed first, so ions.gro is a reliable
+            # sentinel — it is only written after prepare → topol → box →
+            # solvate → ions all complete successfully.
+            setup)         [ -f "output/setup/ions.gro" ] ;;
+            # Equilibration completes when the last stage (NPT) produces its
+            # output. The EM stage separately verifies log-based convergence
+            # before allowing NVT to proceed. NPT.gro is only written after
+            # EM → NVT → NPT all succeed.
+            equilibration)  [ -f "output/equilibration/npt.gro" ] ;;
+            # Production is excluded from file-based detection because md.xtc
+            # exists after the first frame — its mere presence does not
+            # indicate completion of the full trajectory. Production state
+            # is tracked by the workflow.json runs array and scheduler
+            # job status. The user runs `run.sh status` to sync state.
+            production)     return 1 ;;
+            *)             return 1 ;;
+        esac
+    }
+
     # ── Submit setup ──
     local setup_status
     setup_status=$(grep -o '"setup": {[^}]*}' .state/workflow.json 2>/dev/null | grep -o '"status": "[^"]*"' | cut -d'"' -f4 || echo "pending")
 
     if [ "$setup_status" = "completed" ]; then
         echo "SETUP: already completed"
+        dep_setup=$(grep -o '"setup": {[^}]*}' .state/workflow.json | grep -o '"job_id": "[^"]*"' | cut -d'"' -f4)
+    elif [ "$setup_status" = "running" ] && phase_is_done "setup"; then
+        echo "SETUP: outputs found, marking completed"
+        state_mark_completed "setup"
         dep_setup=$(grep -o '"setup": {[^}]*}' .state/workflow.json | grep -o '"job_id": "[^"]*"' | cut -d'"' -f4)
     else
         echo "SETUP: submitting..."
@@ -80,6 +110,10 @@ SCRIPT
 
     if [ "$eq_status" = "completed" ]; then
         echo "EQUILIBRATION: already completed"
+        dep_eq=$(grep -o '"equilibration": {[^}]*}' .state/workflow.json | grep -o '"job_id": "[^"]*"' | cut -d'"' -f4)
+    elif [ "$eq_status" = "running" ] && phase_is_done "equilibration"; then
+        echo "EQUILIBRATION: outputs found, marking completed"
+        state_mark_completed "equilibration"
         dep_eq=$(grep -o '"equilibration": {[^}]*}' .state/workflow.json | grep -o '"job_id": "[^"]*"' | cut -d'"' -f4)
     else
         echo "EQUILIBRATION: submitting..."

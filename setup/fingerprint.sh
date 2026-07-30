@@ -44,6 +44,10 @@ FINGERPRINT=$(
     fi
 )
 
-echo "$FINGERPRINT" > ".state/fingerprint"
-echo "Fingerprint written: .state/fingerprint"
-echo "  Files: ${FILES_TO_HASH[*]}"
+if [ "${1:-}" = "--check" ]; then
+    echo "$FINGERPRINT"
+else
+    echo "$FINGERPRINT" > ".state/fingerprint"
+    echo "Fingerprint written: .state/fingerprint"
+    echo "  Files: ${FILES_TO_HASH[*]}"
+fi

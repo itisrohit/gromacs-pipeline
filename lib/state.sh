@@ -70,7 +70,11 @@ state_update_production_chunk() {
     mv "$tmp" "$STATE_FILE"
 }
 
-# ── Compare fingerprint (calls setup/fingerprint.sh) ──
+# ── Compare fingerprint ──
+# Calls setup/fingerprint.sh --check which computes and prints
+# the current fingerprint WITHOUT modifying .state/fingerprint.
+# The stored fingerprint is only written during initialization
+# (setup/fingerprint.sh) or explicit reinitialization.
 state_verify_fingerprint() {
     if [ ! -f ".state/fingerprint" ]; then
         return 2
@@ -79,12 +83,30 @@ state_verify_fingerprint() {
     previous=$(cat ".state/fingerprint")
 
     local current
-    current=$(bash setup/fingerprint.sh 2>/dev/null && cat ".state/fingerprint" 2>/dev/null || echo "")
+    current=$(bash setup/fingerprint.sh --check 2>/dev/null || echo "")
 
+    if [ -z "$current" ]; then
+        return 2
+    fi
     if [ "$previous" = "$current" ]; then
         return 0
     fi
     return 1
+}
+
+# ── Mark a phase completed based on output file evidence ──
+# Called by cmd_submit when state says "running" but output files
+# indicate the phase is actually done. This prevents unnecessary
+# resubmission of completed work.
+state_mark_completed() {
+    local phase="$1"
+    local tmp
+    tmp=$(mktemp "$STATE_FILE.XXXXXX")
+    local jid
+    jid=$(grep -o "\"$phase\": {[^}]*}" "$STATE_FILE" 2>/dev/null | grep -o '"job_id": "[^"]*"' | cut -d'"' -f4)
+    sed "s/\"$phase\": {[^}]*}/\"$phase\": {\"status\": \"completed\", \"job_id\": \"$jid\"}/" \
+        "$STATE_FILE" > "$tmp"
+    mv "$tmp" "$STATE_FILE"
 }
 
 # ── List active job IDs ──
