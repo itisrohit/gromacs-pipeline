@@ -80,7 +80,12 @@ set -euo pipefail
 PROJECT_DIR="$PROJECT_DIR"
 PIPELINE_DIR="$PIPELINE_DIR"
 cd "\$PROJECT_DIR"
-export GMXLIB="\$PIPELINE_DIR/forcefields\${GMXLIB:+:\$GMXLIB}"
+export GMXLIB="\$PIPELINE_DIR/forcefields"
+_gmx_bin=\$(command -v gmx_mpi 2>/dev/null || command -v gmx 2>/dev/null || true)
+if [ -n "\$_gmx_bin" ]; then
+    _gmx_top="\$(dirname \"\$(dirname \"\$_gmx_bin\")\")/share/gromacs/top"
+    [ -d "\$_gmx_top" ] && export GMXLIB="\$GMXLIB:\$_gmx_top"
+fi
 source "\$PROJECT_DIR/config.sh"
 source "\$PIPELINE_DIR/profiles/\$CLUSTER.sh"
 source "\$PIPELINE_DIR/lib/gmx.sh"
@@ -126,7 +131,12 @@ set -euo pipefail
 PROJECT_DIR="$PROJECT_DIR"
 PIPELINE_DIR="$PIPELINE_DIR"
 cd "\$PROJECT_DIR"
-export GMXLIB="\$PIPELINE_DIR/forcefields\${GMXLIB:+:\$GMXLIB}"
+export GMXLIB="\$PIPELINE_DIR/forcefields"
+_gmx_bin=\$(command -v gmx_mpi 2>/dev/null || command -v gmx 2>/dev/null || true)
+if [ -n "\$_gmx_bin" ]; then
+    _gmx_top="\$(dirname \"\$(dirname \"\$_gmx_bin\")\")/share/gromacs/top"
+    [ -d "\$_gmx_top" ] && export GMXLIB="\$GMXLIB:\$_gmx_top"
+fi
 source "\$PROJECT_DIR/config.sh"
 source "\$PIPELINE_DIR/profiles/\$CLUSTER.sh"
 source "\$PIPELINE_DIR/lib/gmx.sh"
@@ -165,7 +175,12 @@ set -euo pipefail
 PROJECT_DIR="$PROJECT_DIR"
 PIPELINE_DIR="$PIPELINE_DIR"
 cd "\$PROJECT_DIR"
-export GMXLIB="\$PIPELINE_DIR/forcefields\${GMXLIB:+:\$GMXLIB}"
+export GMXLIB="\$PIPELINE_DIR/forcefields"
+_gmx_bin=\$(command -v gmx_mpi 2>/dev/null || command -v gmx 2>/dev/null || true)
+if [ -n "\$_gmx_bin" ]; then
+    _gmx_top="\$(dirname \"\$(dirname \"\$_gmx_bin\")\")/share/gromacs/top"
+    [ -d "\$_gmx_top" ] && export GMXLIB="\$GMXLIB:\$_gmx_top"
+fi
 source "\$PROJECT_DIR/config.sh"
 source "\$PIPELINE_DIR/profiles/\$CLUSTER.sh"
 source "\$PIPELINE_DIR/lib/gmx.sh"
