@@ -3,6 +3,8 @@
 A minimal, Bash-only molecular dynamics pipeline for HPC clusters (PBS / Slurm / LSF).
 Built around standard GROMACS capabilities — no Python, no workflow engines, no Docker.
 
+**Repository**: https://github.com/itisrohit/gromacs-pipeline
+
 ---
 
 ## Architecture: why 3 jobs?
@@ -12,7 +14,7 @@ The pipeline submits **3 PBS jobs** chained with dependencies:
 ```
 Job 1: SETUP (CPU)          prepare → pdb2gmx → editconf → solvate → genion → index
 Job 2: EQUILIBRATION (GPU)  EM → NVT → NPT
-Job 3: PRODUCTION (GPU)     production MD (chunked, checkpoint-aware)
+Job 3: PRODUCTION (GPU)     production MD (checkpoint-aware, extend-from-checkpoint loop)
 ```
 
 Each job waits for the previous via `-W depend=afterok:`. This balances:
@@ -21,8 +23,10 @@ Each job waits for the previous via `-W depend=afterok:`. This balances:
 - **Resumability** — if production hits walltime, it restarts from checkpoint
 - **Correct hardware** — setup uses CPU nodes, eq/production use GPU nodes
 
-Production is chunked: `PRODUCTION_NS / CHUNK_NS` chunks are submitted in a chain.
-Each chunk runs `mdrun -maxh -cpi -nsteps -1` so long simulations survive walltime limits.
+Production uses an extend-from-checkpoint loop. Each PBS job runs multiple
+chunks until the walltime budget is exhausted, then exits gracefully. The next
+job resumes from the last checkpoint. No need for even division of
+`PRODUCTION_NS / CHUNK_NS`.
 
 ---
 
@@ -32,14 +36,15 @@ Each chunk runs `mdrun -maxh -cpi -nsteps -1` so long simulations survive wallti
 gromacs-pipeline/
 ├── run.sh                    # Main entry point (submit/status/report)
 ├── lib/
-│   ├── gmx.sh                # GROMACS discovery, version check, GPU flags
+│   ├── gmx.sh                # GROMACS discovery, version check, GPU flags, checkpoint reading
 │   ├── scheduler.sh          # PBS/Slurm/LSF submission abstraction
-│   ├── stages.sh             # All MD stage functions
+│   ├── stages.sh             # All MD stage functions (including production loop)
 │   └── state.sh              # Locking, workflow state, fingerprint check
 ├── setup/
 │   ├── init.sh               # Create a new project
 │   ├── validate.sh           # Validate a project before running
 │   ├── doctor.sh             # Check HPC environment
+│   ├── replicate.sh          # Clone template into N replicates
 │   ├── fingerprint.sh        # Hash simulation inputs
 │   └── templates/
 │       └── config.sh         # Default project config
@@ -55,19 +60,27 @@ gromacs-pipeline/
 │   └── md.mdp
 ├── forcefields/              # Shared force field storage (user-populated)
 │   └── get-ff.sh             # Force field manager
-└── README.md
+├── tests/
+│   ├── unit.sh               # Unit tests for gmx.sh functions
+│   ├── integration.sh        # Integration tests for production loop
+│   └── bin/
+│       └── fake_gmx          # Mock GROMACS for testing
+├── docs/
+│   └── benchmark.md          # Performance benchmark report
+├── AGENTS.md                 # Agent/developer operations guide
+└── README.md                 # This file
 ```
 
 ---
 
-## Quick start (5 steps)
+## Quick start
 
 > **Where**: steps 1-2 are **LOCAL** (your Mac). Steps 3-5 are **ON THE HPC**.
 
 ```bash
 # ── RUN LOCALLY (on your Mac) ──
 # 1. Create a project
-bash gromacs-pipeline/setup/init.sh projects/my_system
+bash setup/init.sh projects/my_system
 
 # 2. Place your structure, prepare it, and edit config
 bash projects/my_system/prep/prepare.sh            # → input/system.pdb
@@ -92,38 +105,21 @@ Monitor with `bash gromacs-pipeline/run.sh status projects/my_system` (on HPC).
 
 > **RUN LOCALLY** — uploads your local code/input to the HPC.
 
-The code lives in your local git repo. Upload it to the HPC with `scp`
-(you'll be prompted for your HPC password each time). Pick the commands
-for wherever you are locally:
+The pipeline lives in its own git repo. Upload it to the HPC with `scp`
+(you'll be prompted for your HPC password each time).
 
-### From `rohit2/gromacs-pipeline/`
+### Upload the pipeline
 
 ```bash
-# Upload pipeline changes
+# From the gromacs-pipeline directory:
 scp -r ./* blz208818@hpc.iitd.ac.in:~/simulations/gromacs-pipeline/
-
-# Upload the project
-scp -r ../projects/blm_cmyc blz208818@hpc.iitd.ac.in:~/simulations/projects/
 ```
 
-### From `rohit2/projects/`
+### Upload a project
 
 ```bash
-# Upload just the project
-scp -r blm_cmyc blz208818@hpc.iitd.ac.in:~/simulations/projects/
-
-# Upload the pipeline (one level up)
-scp -r ../gromacs-pipeline/* blz208818@hpc.iitd.ac.in:~/simulations/gromacs-pipeline/
-```
-
-### From `rohit2/projects/blm_cmyc/`
-
-```bash
-# Upload this project
-scp -r . blz208818@hpc.iitd.ac.in:~/simulations/projects/blm_cmyc/
-
-# Upload the pipeline (two levels up)
-scp -r ../../gromacs-pipeline/* blz208818@hpc.iitd.ac.in:~/simulations/gromacs-pipeline/
+# From your projects directory:
+scp -r projects/blm_cmyc blz208818@hpc.iitd.ac.in:~/simulations/projects/
 ```
 
 ### Notes
@@ -132,12 +128,13 @@ scp -r ../../gromacs-pipeline/* blz208818@hpc.iitd.ac.in:~/simulations/gromacs-p
   but it will NOT delete files on the HPC that you removed locally.
 - **Never upload `output/` or `.state/`** back to the HPC — those are
   generated there. Only upload code/input changes.
-- Prefer uploading only the files you changed (like the deploy pattern in
-  `AGENTS.md`) over re-uploading everything.
 - For a clean sync (removes stale files on HPC), use:
   ```bash
   rsync -av --delete ./ blz208818@hpc.iitd.ac.in:~/simulations/gromacs-pipeline/
   ```
+- **Do NOT `git clone` on the HPC** — it hangs. Always tar+scp upload.
+- macOS tar adds `._` files. Delete them from force fields:
+  `find forcefields -name '._*' -delete`
 
 ---
 
@@ -148,7 +145,7 @@ scp -r ../../gromacs-pipeline/* blz208818@hpc.iitd.ac.in:~/simulations/gromacs-p
 > **RUN LOCALLY** — creates the project folder structure on your Mac.
 
 ```bash
-bash gromacs-pipeline/setup/init.sh projects/blm_cmyc
+bash setup/init.sh projects/blm_cmyc
 ```
 
 This creates:
@@ -294,7 +291,7 @@ This means you can re-run `run.sh submit` safely; it only submits what's incompl
 | Situation | What changed | Action |
 |-----------|-------------|--------|
 | **Resume** | Nothing, or only a bug fix in pipeline code / MDP | Just re-`submit` — completed stages are skipped, only incomplete ones re-run |
-| **Resume after walltime** | Production chunk hit walltime | Just re-`submit` — `mdrun -cpi` resumes from checkpoint automatically |
+| **Resume after walltime** | Production hit walltime | Just re-`submit` — `mdrun -cpi` resumes from checkpoint automatically |
 | **Restart** | Force field, `system.pdb`, or `config.sh` changed | `rm -rf output` then re-init + submit (below) |
 | **Restart phase** | Only equilibration/production settings changed | Delete just that phase's dir then re-`submit` |
 
@@ -304,10 +301,6 @@ This means you can re-run `run.sh submit` safely; it only submits what's incompl
 # Just re-submit. Completed stages skip, incomplete ones run.
 bash gromacs-pipeline/run.sh submit projects/my_system
 ```
-
-Example: if NVT failed but setup is done, re-running `submit` skips setup
-(`ions.gro` exists) and only re-submits equilibration. If production hit
-walltime, `mdrun -cpi` continues from the checkpoint instead of step 0.
 
 ### Restart from scratch (only when inputs changed)
 
@@ -321,20 +314,6 @@ mkdir -p projects/my_system/output/setup \
          projects/my_system/output/logs
 bash gromacs-pipeline/setup/state.sh projects/my_system
 bash gromacs-pipeline/setup/fingerprint.sh projects/my_system
-bash gromacs-pipeline/run.sh submit projects/my_system
-```
-
-### Restart just equilibration or production
-
-```bash
-# If only equilibration needs a clean run:
-rm -rf projects/my_system/output/equilibration
-bash gromacs-pipeline/run.sh submit projects/my_system
-```
-
-```bash
-# If only production needs a clean run:
-rm -rf projects/my_system/output/production
 bash gromacs-pipeline/run.sh submit projects/my_system
 ```
 
@@ -366,6 +345,7 @@ bash gromacs-pipeline/run.sh submit projects/my_system
 | Command | Purpose |
 |---------|---------|
 | `run.sh submit <project>` | Submit all pipeline jobs |
+| `run.sh submit --force <project>` | Submit (skip fingerprint check) |
 | `run.sh status <project>` | Show phase + scheduler status |
 | `run.sh report <project>` | Generate completion report |
 
@@ -402,7 +382,7 @@ bash gromacs-pipeline/run.sh submit projects/my_system
 | EM | `grompp` + `mdrun` | → `em.gro` (convergence checked) |
 | NVT | `grompp` + `mdrun -cpi` (GPU) | → `nvt.gro` |
 | NPT | `grompp` + `mdrun -cpi` (GPU) | → `npt.gro` |
-| Production | `mdrun -maxh -cpi -nsteps -1` (GPU) | → `md.xtc` (chunked) |
+| Production | `mdrun -maxh -cpi` (GPU, chunked loop) | → `md.xtc` |
 
 ---
 
@@ -450,6 +430,20 @@ unique `PROJECT` name per replicate, and reinitializes state/fingerprint so
 each is fully independent. Set `PRODUCTION_NS=500` and `CHUNK_NS=50` in the
 template first — each replicate then chains production chunks sequentially
 while the 3 replicates run in parallel.
+
+---
+
+## Testing
+
+```bash
+# Unit tests (gmx.sh helper functions)
+bash tests/unit.sh
+
+# Integration tests (production loop)
+bash tests/integration.sh
+```
+
+Uses `tests/bin/fake_gmx` to simulate GROMACS without a GPU.
 
 ---
 
