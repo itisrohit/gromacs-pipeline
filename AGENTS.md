@@ -100,6 +100,23 @@ See `~/simulations/bench/benchmark_summary.log` on HPC.
 4. **Apply C-rescale to production MDP** after validation (replace Berendsen for correct ensemble).
 5. **Configure BLM-KRAS_K 500ns × 3 replicates** via `setup/replicate.sh`.
 
+### Validation matrix
+
+| Stage | BLM-cMYC (protein-DNA) | Protein-only | Protein-RNA | Protein-ligand | Membrane |
+|-------|------------------------|--------------|-------------|----------------|----------|
+| Setup (pdb2gmx → index) | ✅ Validated | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested |
+| EM | ✅ Validated | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested |
+| NVT | ✅ Validated | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested |
+| NPT (Berendsen) | ✅ Validated | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested |
+| Production (chunking) | ✅ Validated (137.2 ps) | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested |
+| Walltime interruption | ✅ Validated | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested |
+| Trajectory preparation | ✅ Validated | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested |
+| Full pipeline (setup→eq→prod→prep) | ⚠️ Not tested end-to-end | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested |
+| Replicates (setup/replicate.sh) | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested |
+
+**Tested systems:** BLM-cMYC (697k atoms, protein-DNA, amber99sb-ildn, spce water)
+**Not tested:** Protein-only, protein-RNA, protein-ligand, membrane systems, different force fields, different water models
+
 ---
 
 ## Repository layout (local)
