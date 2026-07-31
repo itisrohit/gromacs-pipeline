@@ -114,6 +114,9 @@ Gotchas:
   warnings are harmless (macOS metadata). Ignore them.
 - macOS tar adds `._` files. **Delete them from force fields**:
   `find forcefields -name '._*' -delete` (they break GROMACS).
+- **Deploy ALL changed files** — especially `profiles/*.sh`. Missing a
+  profile upload means jobs use stale node selection (e.g. V100 instead of
+  the intended A100). After deploying, verify: `grep SELECT_GPU profiles/iitd.sh`.
 
 ---
 
