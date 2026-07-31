@@ -220,11 +220,12 @@ Level 3: Scientific Reproducibility Considerations
 - PRODUCTION_COMPLETE marker created after job 5
 - Total runtime ~12 minutes
 
-**Current state:**
-- Job 968580.pbshpc: Queued (Q), waiting for A100
+**Current state (verified):**
+- Job 968580.pbshpc: Queued (Q), waiting for A100 GPU slot
 - Config: PRODUCTION_NS=0.5, CHUNK_NS=0.1, PROD_WALLTIME=00:02:30
-- Production dir: md.tpr, md.cpt, md.xtc, md.edr, md.log (from previous 137.2 ps run)
-- State: production = "running" (job 968580)
+- Production dir: md.tpr (20M), md.cpt (16M), md.xtc (7.6M), md.edr (11K), md.log (33K) — from previous 137.2 ps run
+- State: production = "running" (job 968580), setup/equilibration = "completed"
+- A100 nodes: all busy (0/2 GPUs free on each aice node)
 
 **To check status:**
 ```bash
