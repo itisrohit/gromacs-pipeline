@@ -352,15 +352,57 @@ run_stage_npt() {
     echo "NPT: Complete"
 }
 
-# ── Production MD (checkpoint-aware, used for all chunks) ──
+# ── Production MD (extend-from-checkpoint loop) ──
+#
+# The checkpoint (md.cpt) is the single source of truth. Each iteration:
+#   1. Read current time from md.cpt (or 0 if absent)
+#   2. Compute target = min(current_time + CHUNK_NS, PRODUCTION_NS)
+#   3. Convert the TPR to end at target
+#   4. Run mdrun (stopping at target or walltime, whichever comes first)
+#   5. Re-read checkpoint to confirm progress
+#
+# The loop runs multiple chunks per PBS job when walltime allows.
+# When the walltime budget is nearly exhausted, the job exits 0 so
+# the scheduler (or manual re-submit) can continue with a fresh job.
+# -maxh is ONLY a walltime safety mechanism — the target controls the end.
 run_stage_production() {
-    echo "PRODUCTION: Running production MD..."
     mkdir -p output/production
+    echo "PRODUCTION: extend-from-checkpoint loop"
 
+    # ── Lock: prevent concurrent production runs (corrupts md.cpt/xtc) ──
+    local lock_dir="output/production/.production.lock"
+    if command -v flock >/dev/null 2>&1; then
+        exec 9>"$lock_dir.flock"
+        if ! flock -n 9; then
+            echo "PRODUCTION: another production job is active; skipping" >&2
+            return 0
+        fi
+    else
+        if ! mkdir "$lock_dir" 2>/dev/null; then
+            # Lock exists — check if owner is still alive
+            if [ -f "$lock_dir/pid" ]; then
+                local old_pid
+                old_pid=$(cat "$lock_dir/pid" 2>/dev/null || echo "")
+                if [ -n "$old_pid" ] && ! kill -0 "$old_pid" 2>/dev/null; then
+                    echo "PRODUCTION: removing stale lock (PID $old_pid dead)" >&2
+                    rm -rf "$lock_dir"
+                fi
+            fi
+            # Retry acquisition after potential stale removal
+            if ! mkdir "$lock_dir" 2>/dev/null; then
+                echo "PRODUCTION: another production job is active; skipping" >&2
+                return 0
+            fi
+        fi
+        echo "$$" > "$lock_dir/pid"
+    fi
+    trap 'rm -rf "$lock_dir" "$lock_dir.flock" 2>/dev/null; exec 9>&-' RETURN
+
+    # ── Compile TPR on first use ──
     if [ ! -f output/production/md.tpr ]; then
-        echo "PRODUCTION: Compiling TPR..."
+        echo "PRODUCTION: compiling TPR..."
         run_grompp_checked 2 \
-            -f mdp/md.mdp \
+            -f "${MD_MDP:-mdp/md.mdp}" \
             -c output/equilibration/npt.gro \
             -r output/equilibration/npt.gro \
             -p output/setup/topol.top \
@@ -368,29 +410,127 @@ run_stage_production() {
             -o output/production/md.tpr
     fi
 
-    # Calculate maxh from walltime with 10% safety margin
-    local walltime_seconds
-    walltime_seconds=$(echo "$PROD_WALLTIME" | awk -F: '{print ($1*3600 + $2*60 + $3) * 0.9}')
-    local maxh
-    maxh=$(echo "scale=2; $walltime_seconds / 3600" | bc 2>/dev/null || echo "23.5")
+    # ── Guard: checkpoint lost mid-run (trajectory exists but no checkpoint) ──
+    if [ ! -f output/production/md.cpt ] && [ -f output/production/md.xtc ]; then
+        echo "ERROR: checkpoint missing but trajectory exists — data loss suspected" >&2
+        echo "       Delete md.xtc and re-submit to start production from scratch." >&2
+        return 1
+    fi
 
-    local gpu_flags
+    # ── Derived parameters ──
+    local prod_ns_ps chunk_ns_ps dt job_wall_s safety_s gpu_flags
+    dt=$(production_dt)
+    prod_ns_ps=$(awk -v ns="$PRODUCTION_NS" 'BEGIN{printf "%.6f", ns*1000}')
+    chunk_ns_ps=$(awk -v ns="$CHUNK_NS" 'BEGIN{printf "%.6f", ns*1000}')
+    job_wall_s=$(walltime_to_seconds "$PROD_WALLTIME")
+    safety_s=$(( job_wall_s / 20 )); [ "$safety_s" -lt 60 ] && safety_s=60
     gpu_flags=$(gmx_gpu_flags)
 
-    # -append requires an existing checkpoint. On the first chunk there is
-    # none, so only enable append when resuming from a prior chunk.
-    local append_flag=""
-    [ -f output/production/md.cpt ] && append_flag="-append"
+    # ── Current time from checkpoint ──
+    local t
+    t=$(checkpoint_time_ps output/production/md.cpt "$dt") || return 1
 
-    echo "PRODUCTION: mdrun -maxh $maxh"
-    $GMX mdrun \
-        -deffnm output/production/md \
-        -cpi output/production/md.cpt \
-        $append_flag \
-        -maxh "$maxh" \
-        -nsteps -1 \
-        $gpu_flags \
-        -v
+    if time_gte "$t" "$prod_ns_ps"; then
+        production_mark_complete
+        return 0
+    fi
 
-    echo "PRODUCTION: mdrun exited (checkpoint written if walltime exceeded)"
+    # ── Walltime budget ──
+    local job_start now elapsed remaining maxh
+    job_start=$(date +%s)
+
+    echo "PRODUCTION: starting loop (current=${t} ps, target=${prod_ns_ps} ps)"
+
+    while :; do
+        # Check walltime budget
+        now=$(date +%s)
+        elapsed=$(( now - job_start ))
+        remaining=$(( job_wall_s - elapsed ))
+        if [ "$remaining" -le "$safety_s" ]; then
+            echo "PRODUCTION: walltime budget nearly exhausted (${remaining}s left); ending job"
+            return 0
+        fi
+
+        # Compute next target
+        local target
+        target=$(time_min "$(awk -v a="$t" -v b="$chunk_ns_ps" 'BEGIN{printf "%.6f", a+b}')" "$prod_ns_ps")
+
+        if time_lte "$target" "$t"; then
+            echo "ERROR: cannot advance (target=${target} ps <= current=${t} ps)" >&2
+            return 1
+        fi
+
+        # Maxh = 90% of remaining walltime (safety mechanism only)
+        maxh=$(awk -v r="$remaining" 'BEGIN{h=(r*0.9)/3600; if(h<0.01) h=0.01; printf "%.3f", h}')
+
+        echo "PRODUCTION: extending to ${target} ps (maxh=${maxh}h)"
+        # Atomic TPR replacement: write to temp, then mv (never leave corrupted md.tpr)
+        # GROMACS appends .tpr to -o filenames that lack the extension, so use .tpr suffix.
+        local tmp_tpr="output/production/md.tpr.tmp.tpr"
+        "$GMX" convert-tpr \
+            -s output/production/md.tpr \
+            -until "$target" \
+            -o "$tmp_tpr" || {
+            rm -f "$tmp_tpr"
+            echo "ERROR: convert-tpr failed" >&2
+            return 1
+        }
+        if [ ! -f "$tmp_tpr" ]; then
+            echo "ERROR: convert-tpr exited 0 but $tmp_tpr not found" >&2
+            return 1
+        fi
+        mv "$tmp_tpr" output/production/md.tpr
+
+        # -append only if checkpoint exists (not first run)
+        local append_flag=""
+        [ -f output/production/md.cpt ] && append_flag="-append"
+
+        "$GMX" mdrun \
+            -deffnm output/production/md \
+            -cpi output/production/md.cpt \
+            $append_flag \
+            -maxh "$maxh" \
+            $gpu_flags \
+            -v || {
+            echo "ERROR: mdrun failed" >&2
+            return 1
+        }
+
+        # Verify checkpoint was written
+        if [ ! -f output/production/md.cpt ]; then
+            echo "ERROR: mdrun exited without writing a checkpoint" >&2
+            return 1
+        fi
+
+        # Re-read checkpoint time
+        local new_t
+        new_t=$(checkpoint_time_ps output/production/md.cpt "$dt") || return 1
+
+        # Check completion
+        if time_gte "$new_t" "$prod_ns_ps"; then
+            production_mark_complete
+            return 0
+        fi
+
+        # Zero progress detection
+        if time_lte "$new_t" "$t"; then
+            echo "ERROR: mdrun made no progress (t=${t} ps -> ${new_t} ps). Check walltime/GPU." >&2
+            return 1
+        fi
+
+        # Did we reach the chunk target? If not, walltime safety hit.
+        if time_lt "$new_t" "$target"; then
+            echo "PRODUCTION: chunk hit walltime at ${new_t} ps (target was ${target} ps); ending job"
+            return 0
+        fi
+
+        # Chunk completed — continue to next target
+        t="$new_t"
+    done
+}
+
+# ── Mark production complete (UI marker, not authoritative) ──
+production_mark_complete() {
+    touch output/production/PRODUCTION_COMPLETE
+    echo "PRODUCTION: COMPLETE (${PRODUCTION_NS} ns reached)"
 }
