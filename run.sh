@@ -55,7 +55,7 @@ cmd_submit() {
         case "$p" in
             setup)         [ -f "$PROJECT_DIR/output/setup/ions.gro" ] ;;
             equilibration)  [ -f "$PROJECT_DIR/output/equilibration/npt.gro" ] ;;
-            production)     return 1 ;;
+            production)     [ -f "$PROJECT_DIR/output/production/PRODUCTION_COMPLETE" ] ;;
             *)             return 1 ;;
         esac
     }
@@ -160,14 +160,17 @@ SCRIPT
         state_update_phase "equilibration" "running" "$dep_eq"
     fi
 
-    # ── Submit production chunks ──
+    # ── Submit production ──
     local prod_status
     prod_status=$(grep -o '"production": {[^}]*}' .state/workflow.json 2>/dev/null | grep -o '"status": "[^"]*"' | cut -d'"' -f4 || echo "pending")
 
     if [ "$prod_status" = "completed" ]; then
         echo "PRODUCTION: already completed"
+    elif [ "$prod_status" = "running" ] && phase_is_done "production"; then
+        echo "PRODUCTION: outputs found, marking completed"
+        state_mark_completed "production"
     else
-        echo "PRODUCTION: submitting chunks..."
+        echo "PRODUCTION: submitting production job (resumes from checkpoint)..."
         mkdir -p "$PROJECT_DIR/scripts"
         cat > "$PROJECT_DIR/scripts/production.sh" << SCRIPT
 #!/bin/bash
@@ -194,21 +197,13 @@ gmx_version_log
 gmx_version_pin "\$GMX_VERSION"
 export OMP_NUM_THREADS="\${PROD_CPUS:-8}"
 run_stage_production
-echo "PRODUCTION CHUNK COMPLETE"
+echo "PRODUCTION JOB COMPLETE"
 SCRIPT
         chmod +x "$PROJECT_DIR/scripts/production.sh"
 
-        local chunks=$((PRODUCTION_NS / CHUNK_NS))
-        local prev_job="$dep_eq"
-
-        for i in $(seq 1 "$chunks"); do
-            local job_id
-            job_id=$(scheduler_submit "$PROJECT_DIR/scripts/production.sh" "$PROD_CPUS" "$PROD_GPUS" "$PROD_MEM" "$PROD_WALLTIME" "$prev_job")
-            state_update_production_chunk "$i" "$job_id" "running"
-            prev_job="$job_id"
-        done
-
-        state_update_phase "production" "running" "$prev_job"
+        local job_id
+        job_id=$(scheduler_submit "$PROJECT_DIR/scripts/production.sh" "$PROD_CPUS" "$PROD_GPUS" "$PROD_MEM" "$PROD_WALLTIME" "$dep_eq")
+        state_update_phase "production" "running" "$job_id"
     fi
 
     echo ""

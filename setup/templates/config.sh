@@ -7,7 +7,7 @@
 # ⚠️ DO NOT TOUCH these unless you understand the consequence:
 #   - EQ_GPUS / PROD_GPUS must be >= 1 (equilibration and production are GPU runs)
 #   - BOX_DISTANCE too small → simulation blows up (unstable density)
-#   - CHUNK_NS must divide PRODUCTION_NS evenly (chunking arithmetic)
+#   - CHUNK_NS must be ≤ PRODUCTION_NS
 #   - FORCEFIELD / WATER_MODEL / CATION / ANION must match the installed
 #     force field — a mismatch causes pdb2gmx/genion failures
 
@@ -61,10 +61,9 @@ ANION="CL"
 # ── Simulation Length ───────────────────────────────────────────────────────
 # PRODUCTION_NS = total production time (ns). This is the "science" length.
 PRODUCTION_NS=100
-# CHUNK_NS = length of ONE submitted production job (ns). The run is split
-# into PRODUCTION_NS / CHUNK_NS sequential jobs, each resuming from checkpoint.
-#   ⚠️ CHUNK_NS MUST divide PRODUCTION_NS evenly.
-#   Smaller chunk = more resume points (safer) but more queue waits (slower).
+# CHUNK_NS = length of ONE chunk (ns). Each chunk runs until this much
+# simulation time passes or walltime is exhausted, whichever comes first.
+# The pipeline loops until PRODUCTION_NS is reached — no need for even division.
 #   Rule of thumb: chunk = how much production fits in PROD_WALLTIME.
 CHUNK_NS=50
 
@@ -85,8 +84,9 @@ EQ_WALLTIME="02:00:00"   # must fit EM+NVT+NPT (usually 1-2 h)
 PROD_CPUS=8              # CPU threads for production
 PROD_GPUS=1              # ⚠️ MUST be >= 1 — production requires a GPU
 PROD_MEM="16GB"
-# PROD_WALLTIME = walltime per chunk. Each chunk runs ~90% of this, writes a
-# checkpoint, and stops. Must fit the cluster's max job walltime.
+# PROD_WALLTIME = walltime per PBS job. Each job loops through chunks
+# until the walltime budget is nearly exhausted, then exits gracefully.
+# Must fit the cluster's max job walltime.
 PROD_WALLTIME="24:00:00"
 
 # ── Scheduler ───────────────────────────────────────────────────────────────
