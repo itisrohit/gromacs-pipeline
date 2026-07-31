@@ -191,6 +191,67 @@ run_stage_index() {
     echo "INDEX: Complete"
 }
 
+# ── Run grompp with strict warning verification ──
+# Runs gmx grompp, then inspects every warning. Only the two known benign
+# warnings are tolerated:
+#   1. free ions not bound by a potential/constraint
+#   2. COM removal in the presence of position restraints
+# Any other warning, or grompp failure, exits with a clear error.
+# Usage: run_grompp_checked <maxwarn> <grompp args...>
+run_grompp_checked() {
+    local maxwarn="$1"
+    shift
+
+    local log
+    log=$(mktemp)
+
+    $GMX grompp -maxwarn "$maxwarn" "$@" > "$log" 2>&1
+    local rc=$?
+
+    if [ "$rc" -ne 0 ]; then
+        echo "ERROR: grompp failed:"
+        grep -E 'Fatal|Error|NOTE|WARNING' "$log" 2>/dev/null | head -10
+        rm -f "$log"
+        exit 1
+    fi
+
+    # Inspect every warning block and verify it is expected
+    local block="" bad=0
+    while IFS= read -r line; do
+        case "$line" in
+            "NOTE "*|"WARNING "*)
+                if [ -n "$block" ]; then
+                    case "$block" in
+                        *"not bound by a potential or constraint"*) ;;
+                        *"Removing center of mass motion"*) ;;
+                        *) echo "ERROR: Unexpected grompp warning:"; echo "$block"; bad=1 ;;
+                    esac
+                fi
+                block="$line"
+                ;;
+            "  "*)
+                [ -n "$block" ] && block="$block
+$line"
+                ;;
+        esac
+    done < "$log"
+
+    if [ -n "$block" ]; then
+        case "$block" in
+            *"not bound by a potential or constraint"*) ;;
+            *"Removing center of mass motion"*) ;;
+            *) echo "ERROR: Unexpected grompp warning:"; echo "$block"; bad=1 ;;
+        esac
+    fi
+
+    rm -f "$log"
+    if [ "$bad" -ne 0 ]; then
+        echo "       If this warning is expected for your system, review"
+        echo "       the MDP and topology before proceeding."
+        exit 1
+    fi
+}
+
 # ── Energy minimization ──
 run_stage_em() {
     local out="output/equilibration/em.gro"
@@ -199,14 +260,13 @@ run_stage_em() {
     mkdir -p output/equilibration
     echo "EM: Energy minimization..."
 
-    $GMX grompp \
+    run_grompp_checked 0 \
         -f mdp/em.mdp \
         -c output/setup/ions.gro \
         -r output/setup/ions.gro \
         -p output/setup/topol.top \
         -n output/setup/index.ndx \
-        -o output/equilibration/em.tpr \
-        -maxwarn 2
+        -o output/equilibration/em.tpr
 
     $GMX mdrun \
         -deffnm output/equilibration/em \
@@ -236,14 +296,13 @@ run_stage_nvt() {
 
     echo "NVT: Temperature equilibration..."
 
-    $GMX grompp \
+    run_grompp_checked 2 \
         -f mdp/nvt.mdp \
         -c output/equilibration/em.gro \
         -r output/equilibration/em.gro \
         -p output/setup/topol.top \
         -n output/setup/index.ndx \
-        -o output/equilibration/nvt.tpr \
-        -maxwarn 2
+        -o output/equilibration/nvt.tpr
 
     local gpu_flags
     gpu_flags=$(gmx_gpu_flags)
@@ -268,15 +327,14 @@ run_stage_npt() {
 
     echo "NPT: Pressure equilibration..."
 
-    $GMX grompp \
+    run_grompp_checked 2 \
         -f mdp/npt.mdp \
         -c output/equilibration/nvt.gro \
         -r output/equilibration/nvt.gro \
         -t output/equilibration/nvt.cpt \
         -p output/setup/topol.top \
         -n output/setup/index.ndx \
-        -o output/equilibration/npt.tpr \
-        -maxwarn 2
+        -o output/equilibration/npt.tpr
 
     local gpu_flags
     gpu_flags=$(gmx_gpu_flags)
@@ -301,14 +359,13 @@ run_stage_production() {
 
     if [ ! -f output/production/md.tpr ]; then
         echo "PRODUCTION: Compiling TPR..."
-        $GMX grompp \
+        run_grompp_checked 2 \
             -f mdp/md.mdp \
             -c output/equilibration/npt.gro \
             -r output/equilibration/npt.gro \
             -p output/setup/topol.top \
             -n output/setup/index.ndx \
-            -o output/production/md.tpr \
-            -maxwarn 2
+            -o output/production/md.tpr
     fi
 
     # Calculate maxh from walltime with 10% safety margin
