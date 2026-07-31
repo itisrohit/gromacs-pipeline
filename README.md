@@ -15,6 +15,8 @@ This repository is designed for AI-assisted operation, inspired by Max Iskiev's 
 - Operational knowledge is maintained in dedicated skills rather than duplicated throughout the repository.
 - The repository remains deterministic, reproducible, and script-first.
 
+**For AI agents:** Read `AGENTS.md` first. It contains operational knowledge, validated workflows, known pitfalls, and current project status. This README is for end users. AGENTS.md is the agent's source of truth.
+
 ---
 
 ## Architecture: Why 3 Jobs?
