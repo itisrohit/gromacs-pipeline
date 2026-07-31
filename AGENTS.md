@@ -24,6 +24,64 @@ known pitfalls, and how to get an end-to-end run working.
 
 ---
 
+## CURRENT STATUS — READ THIS FIRST (as of the last session)
+
+**Phase**: Production chunking design fix (in progress) + performance benchmarking.
+
+### Known design bug (being fixed)
+The production chunking does NOT enforce `CHUNK_NS`. Current `run_stage_production`
+uses `mdrun -maxh <walltime> -nsteps -1`, so chunks stop at **walltime**, not at
+`CHUNK_NS` of simulation time. Consequences:
+- `PRODUCTION_NS=1, CHUNK_NS=1` runs ~3 ns (until walltime), not 1 ns.
+- `PRODUCTION_NS=500, CHUNK_NS=50` would stop short (walltime-limited chunks
+  cover less than 50 ns each) — total length wrong.
+
+### Decided fix (approved, NOT yet implemented)
+Use **extend-from-checkpoint** with one `md.tpr`:
+```
+loop until current_time >= PRODUCTION_NS:
+    gmx convert-tpr -s md.tpr -until (current_time + CHUNK_NS) -o md.tpr
+    gmx mdrun -s md.tpr -cpi md.cpt -maxh $maxh
+    current_time = read from md.cpt
+```
+- The checkpoint is the single source of truth; the TPR end is derived from it.
+- Walltime (`-maxh`) is pure safety; interruptions never skip or duplicate time.
+- The **per-chunk `-until` tpr idea was REJECTED** — it silently skips time when
+  a walltime-interrupted chunk exits 0 and `afterok` advances the chain.
+- **Never use PBS job arrays for the chunk chain** (concurrent writes corrupt
+  md.cpt/md.xtc). Parallelism = separate replicate projects.
+
+### Pending benchmark (job 968167 on HPC, queued for A100)
+Validates MDP tuning before adopting:
+- nstlist 40 / 100 / 400
+- verlet-buffer-tolerance 0.002 / 0.005
+- nstcalcenergy 500 / 1000
+- NPT barostat Berendsen vs C-rescale (docs recommend c-rescale)
+Results land in `~/simulations/bench/benchmark_summary.log` on the HPC.
+
+### Other validated recommendations (waiting on benchmark + approval)
+- `verlet-buffer-tolerance=0.005` (safe, GROMACS default)
+- `nstcalcenergy=1000` (docs recommend for GPU-resident)
+- `-pin on` + drop forced `OMP_NUM_THREADS` (thread pinning)
+- **A100 already staged** (profile requests `centos=icelake`)
+- bsc1/amber14sb DNA correction: **NOT available on this HPC** — external
+  acquisition required, high effort. Not a default.
+
+### Validation run status (BLM-cMYC 1ns)
+- Setup ✅, EM ✅, NVT ✅, NPT ✅ (Berendsen — see barostat benchmark)
+- Production: ran on V100 at ~20 ns/day, **over-ran 1ns to ~3ns** because of the
+  chunking bug above (job 967992, likely done/failed by now)
+- The pipeline is PROVEN end-to-end (setup through production).
+
+### Immediate next actions
+1. Stop/clean the over-running validation production if still alive.
+2. Implement the extend-from-checkpoint chunking fix in `run_stage_production`
+   + `run.sh` (per-chunk submit / resubmit until PRODUCTION_NS).
+3. Read benchmark results, adopt validated MDP/barostat changes.
+4. Re-run the 1ns validation to confirm it stops at exactly 1 ns.
+
+---
+
 ## Repository layout (local)
 
 ```
@@ -244,6 +302,14 @@ If a stage finishes suspiciously fast, it likely FAILED (crash), not completed.
 | 14 | trajectory overwritten | missing `-append` | add `-append` to production |
 | 15 | NPT blows up / segfault | Parrinello-Rahman in equilibration | Berendsen NPT, PR production |
 | 16 | grompp aborts on 2 warnings | `-maxwarn 1` too strict | stage-specific + warning check |
+| 17 | production over-runs chunk | `-maxh` stops at walltime, not CHUNK_NS | extend-from-checkpoint (`convert-tpr -until` from md.cpt) — NOT per-chunk tpr (skips time) |
+
+### Known benchmark findings (pending final adoption)
+- npt barostat: docs recommend **C-rescale** over Berendsen (correct ensemble, as stable). Benchmark in progress.
+- `verlet-buffer-tolerance=0.005` = GROMACS default, forces identical, safe.
+- `nstcalcenergy=1000` recommended for GPU-resident.
+- `nstlist`: GROMACS docs say 20-40 often best on GPU; our 400 may be high (benchmark pending).
+- amber14sb + **bsc1** DNA correction: NOT on this HPC; external source needed.
 
 ---
 
