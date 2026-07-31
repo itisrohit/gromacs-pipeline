@@ -17,6 +17,30 @@ check_err() { ERRORS=$((ERRORS + 1)); echo "  ❌ $1"; }
 check_warn() { WARNINGS=$((WARNINGS + 1)); echo "  ⚠️  $1"; }
 check_ok() { echo "  ✅ $1"; }
 
+# ── Helper: search for a force field ──
+find_forcefield() {
+    local ff="$1"
+    local dirs=(
+        "$PROJECT_DIR/${ff}.ff"
+        "$PIPELINE_DIR/forcefields/${ff}.ff"
+    )
+    if [ -n "${GMXLIB:-}" ]; then
+        dirs+=("$GMXLIB/${ff}.ff")
+    fi
+    local gmx_bin
+    gmx_bin=$(command -v gmx_mpi 2>/dev/null || command -v gmx 2>/dev/null || true)
+    if [ -n "$gmx_bin" ]; then
+        local gmx_top
+        gmx_top="$(dirname "$(dirname "$(readlink -f "$gmx_bin" 2>/dev/null || echo "$gmx_bin")")")/share/gromacs/top"
+        dirs+=("$gmx_top/${ff}.ff")
+    fi
+    for d in "${dirs[@]}"; do
+        [ -d "$d" ] && [ -f "$d/forcefield.itp" ] && { echo "$d"; return 0; }
+    done
+    printf '%s\n' "${dirs[@]}"
+    return 1
+}
+
 # ── 1. Config file ──
 echo "── Configuration ──"
 
@@ -46,7 +70,23 @@ for var in "${REQUIRED_VARS[@]}"; do
     fi
 done
 
-# ── 3. Cluster profile ──
+# ── 3. Force field ──
+echo ""
+echo "── Force Field ──"
+
+if [ -n "${FORCEFIELD:-}" ]; then
+    ff_path=$(find_forcefield "$FORCEFIELD") && check_ok "Force field found: $ff_path" || {
+        check_err "Force field '$FORCEFIELD' not found"
+        echo "         Searched:"
+        while IFS= read -r line; do
+            echo "           $line"
+        done <<< "$ff_path"
+    }
+else
+    check_err "FORCEFIELD is empty. Set it in config.sh (e.g. amber14sb, amber99sb-ildn)"
+fi
+
+# ── 4. Cluster profile ──
 echo ""
 echo "── Cluster Profile ──"
 
@@ -59,7 +99,7 @@ if [ -n "${CLUSTER:-}" ]; then
     fi
 fi
 
-# ── 4. Input files ──
+# ── 5. Input files ──
 echo ""
 echo "── Input Files ──"
 
@@ -81,7 +121,7 @@ for fvar in PDB EM_MDP NVT_MDP NPT_MDP MD_MDP; do
     fi
 done
 
-# ── 5. Numeric parameters ──
+# ── 6. Numeric parameters ──
 echo ""
 echo "── Simulation Parameters ──"
 
@@ -100,7 +140,7 @@ for valname in BOX_DISTANCE SALT_CONC; do
     fi
 done
 
-# ── 6. Walltime format ──
+# ── 7. Walltime format ──
 echo ""
 echo "── Walltime Formats ──"
 
@@ -115,7 +155,7 @@ for wtvar in SETUP_WALLTIME EQ_WALLTIME PROD_WALLTIME; do
     fi
 done
 
-# ── 7. Resource values ──
+# ── 8. Resource values ──
 echo ""
 echo "── Resource Settings ──"
 

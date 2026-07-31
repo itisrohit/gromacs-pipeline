@@ -7,14 +7,14 @@ PROJECT="my_project"
 
 # ── Input Files ──
 PDB="input/system.pdb"
-EM_MDP="input/em.mdp"
-NVT_MDP="input/nvt.mdp"
-NPT_MDP="input/npt.mdp"
-MD_MDP="input/md.mdp"
+EM_MDP="mdp/em.mdp"
+NVT_MDP="mdp/nvt.mdp"
+NPT_MDP="mdp/npt.mdp"
+MD_MDP="mdp/md.mdp"
 EXTRA_ITPS=""                    # optional: custom topology includes (space-separated)
 
 # ── System ──
-FORCEFIELD="amber14sb"
+FORCEFIELD=""                        # REQUIRED: set to your force field (e.g. amber14sb)
 WATER_MODEL="spce"
 BOX_TYPE="dodecahedron"
 BOX_DISTANCE="1.0"

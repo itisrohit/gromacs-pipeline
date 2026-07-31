@@ -34,3 +34,5 @@ compressibility         = 4.5e-5
 pbc                     = xyz
 gen_vel                 = no
 nsteps                  = -1
+comm-mode               = Linear
+comm-grps               = Protein_DNA Water_Ions
