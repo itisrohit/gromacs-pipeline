@@ -46,6 +46,8 @@ gromacs-pipeline/
 │   ├── fingerprint.sh        # Hash simulation inputs
 │   └── templates/
 │       └── config.sh         # Default project config
+├── post/
+│   └── prepare.sh            # Trajectory preparation (PBC, center, fit, strip)
 ├── profiles/
 │   ├── iitd.sh               # IIT Delhi HPC (PBS)
 │   ├── generic-pbs.sh        # Generic PBS template
@@ -61,6 +63,7 @@ gromacs-pipeline/
 ├── tests/
 │   ├── unit.sh               # Unit tests for gmx.sh functions
 │   ├── integration.sh        # Integration tests for production loop
+│   ├── test_prepare.sh       # Tests for trajectory preparation
 │   └── bin/
 │       └── fake_gmx          # Mock GROMACS for testing
 ├── docs/
@@ -441,9 +444,53 @@ bash tests/unit.sh
 
 # Integration tests (production loop)
 bash tests/integration.sh
+
+# Trajectory preparation tests
+bash tests/test_prepare.sh
 ```
 
 Uses `tests/bin/fake_gmx` to simulate GROMACS without a GPU.
+
+---
+
+## Trajectory preparation
+
+After production completes, prepare trajectories for visualization and analysis:
+
+```bash
+# Default: PBC correction + centering on Protein
+bash gromacs-pipeline/post/prepare.sh projects/my_system
+
+# With preset
+bash gromacs-pipeline/post/prepare.sh projects/my_system --preset analysis
+
+# With explicit options
+bash gromacs-pipeline/post/prepare.sh projects/my_system \
+    --center-on Protein --fit-to Backbone --keep Protein_DNA
+
+# Force regeneration
+bash gromacs-pipeline/post/prepare.sh projects/my_system --preset analysis --force
+```
+
+### Presets
+
+| Preset | Effect |
+|--------|--------|
+| `visualization` | Center on Protein (default) |
+| `analysis` | Center + fit to Backbone + keep Protein_DNA |
+| `dry` | Center + keep Protein_DNA (remove solvent) |
+
+### Generated files
+
+All outputs go to `output/prepared/` (raw production files are never modified):
+
+| File | When generated |
+|------|----------------|
+| `md_noPBC.xtc` | Always (PBC-corrected, centered) |
+| `md_noPBC.gro` | Always (first frame) |
+| `md_fitted.xtc` | With `--fit-to` |
+| `md_<group>.xtc` | With `--keep` |
+| `md_<group>.gro` | With `--keep` |
 
 ---
 

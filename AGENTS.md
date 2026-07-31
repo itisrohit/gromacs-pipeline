@@ -89,9 +89,11 @@ gromacs-pipeline/          # the pipeline tool (reusable code only)
 ├── lib/                   # gmx.sh, scheduler.sh, stages.sh, state.sh
 ├── setup/                 # init.sh, validate.sh, replicate.sh, state.sh,
 │   │                      # fingerprint.sh, templates/config.sh
+├── post/                  # prepare.sh (trajectory preparation)
 ├── profiles/              # iitd.sh, generic-pbs.sh, generic-slurm.sh, generic-lsf.sh
 ├── mdp/                   # em.mdp, nvt.mdp, npt.mdp, md.mdp
 ├── forcefields/           # get-ff.sh + installed force fields
+├── tests/                 # unit.sh, integration.sh, test_prepare.sh, fake_gmx
 ├── README.md              # USER documentation
 └── AGENTS.md              # THIS FILE (agent operations)
 ```
@@ -103,7 +105,7 @@ projects/<name>/
 ├── input/system.pdb       # the only structure input
 ├── prep/prepare.sh        # project-specific structure prep (NOT pipeline)
 ├── mdp/                   # copied from pipeline (editable)
-├── output/{setup,equilibration,production,logs}/
+├── output/{setup,equilibration,production,prepared,logs}/
 ├── .state/                # workflow.json, fingerprint
 └── scripts/               # generated job scripts
 ```
@@ -375,6 +377,7 @@ Tests live in `tests/` and use `tests/bin/fake_gmx` to simulate GROMACS without 
 ```bash
 bash gromacs-pipeline/tests/unit.sh        # 20/20 — gmx.sh functions
 bash gromacs-pipeline/tests/integration.sh  # 17/18 — production loop
+bash gromacs-pipeline/tests/test_prepare.sh # 10/10 — trajectory preparation
 ```
 
 ### Known test issues
@@ -384,6 +387,38 @@ bash gromacs-pipeline/tests/integration.sh  # 17/18 — production loop
 2. Second without `FAKE_ZERO` — succeeds, but the test expects failure.
 
 The production code does not persist failure state after zero-progress detection, allowing a clean retry. The repository contains no documentation, comments, or git history explaining whether this test expectation is intentional. **Requires maintainer clarification before modification.** See maintainer report for details.
+
+---
+
+## Trajectory preparation
+
+After production completes, prepare trajectories for visualization and analysis:
+
+```bash
+bash gromacs-pipeline/post/prepare.sh projects/my_system
+bash gromacs-pipeline/post/prepare.sh projects/my_system --preset analysis
+bash gromacs-pipeline/post/prepare.sh projects/my_system --fit-to Backbone --keep Protein_DNA
+```
+
+### What it does
+
+- PBC correction + centering (default)
+- Rigid-body fitting (optional: `--fit-to`)
+- Solvent stripping (optional: `--keep`)
+- Presets: `visualization`, `analysis`, `dry`
+
+### What it does NOT do
+
+- Analysis (RMSD, RMSF, PCA)
+- Visualization (use VMD/PyMOL)
+- Automatic execution (user runs manually)
+
+### Key rules
+
+- Never modifies raw production outputs (`output/production/`)
+- All derived files go to `output/prepared/`
+- Skip-if-exists (idempotent), use `--force` to regenerate
+- Groups resolved from GROMACS built-in (Protein, Backbone) or index.ndx (Protein_DNA)
 
 ---
 
