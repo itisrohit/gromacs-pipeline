@@ -26,59 +26,66 @@ known pitfalls, and how to get an end-to-end run working.
 
 ## CURRENT STATUS — READ THIS FIRST (as of the last session)
 
-**Phase**: Production chunking design fix (in progress) + performance benchmarking.
+**Phase**: Production chunking IMPLEMENTED + benchmark COMPLETE. Awaiting HPC validation + MDP adoption.
 
-### Known design bug (being fixed)
-The production chunking does NOT enforce `CHUNK_NS`. Current `run_stage_production`
-uses `mdrun -maxh <walltime> -nsteps -1`, so chunks stop at **walltime**, not at
-`CHUNK_NS` of simulation time. Consequences:
-- `PRODUCTION_NS=1, CHUNK_NS=1` runs ~3 ns (until walltime), not 1 ns.
-- `PRODUCTION_NS=500, CHUNK_NS=50` would stop short (walltime-limited chunks
-  cover less than 50 ns each) — total length wrong.
+### Production chunking fix (IMPLEMENTED and DEPLOYED to HPC)
+The extend-from-checkpoint loop is implemented in `lib/stages.sh:run_stage_production()`.
+All local tests pass (20/20 unit, 15/16 integration). Deployed to HPC (`lib/gmx.sh`, `lib/stages.sh`, `run.sh`).
 
-### Decided fix (approved, NOT yet implemented)
-Use **extend-from-checkpoint** with one `md.tpr`:
-```
-loop until current_time >= PRODUCTION_NS:
-    gmx convert-tpr -s md.tpr -until (current_time + CHUNK_NS) -o md.tpr
-    gmx mdrun -s md.tpr -cpi md.cpt -maxh $maxh
-    current_time = read from md.cpt
-```
-- The checkpoint is the single source of truth; the TPR end is derived from it.
-- Walltime (`-maxh`) is pure safety; interruptions never skip or duplicate time.
-- The **per-chunk `-until` tpr idea was REJECTED** — it silently skips time when
-  a walltime-interrupted chunk exits 0 and `afterok` advances the chain.
-- **Never use PBS job arrays for the chunk chain** (concurrent writes corrupt
-  md.cpt/md.xtc). Parallelism = separate replicate projects.
+What changed:
+- `checkpoint_time_ps()` in `lib/gmx.sh` reads time via `gmx dump -cp` (primary) or `gmx check` (fallback)
+- `run_stage_production()` loops: read checkpoint → compute target → convert-tpr -until → mdrun -cpi → check progress
+- Atomic TPR replacement: `convert-tpr -o md.tpr.tmp` then `mv md.tpr.tmp md.tpr`
+- Stale lock recovery: PID-based staleness check in mkdir fallback
+- `run.sh` submits ONE production job (no more N-chunk chain), marker-based completion
+- `-nsteps -1` REMOVED from mdrun (was overriding convert-tpr target)
+- All `$GMX` calls quoted for paths with spaces
 
-### Pending benchmark (job 968167 on HPC, queued for A100)
-Validates MDP tuning before adopting:
-- nstlist 40 / 100 / 400
-- verlet-buffer-tolerance 0.002 / 0.005
-- nstcalcenergy 500 / 1000
-- NPT barostat Berendsen vs C-rescale (docs recommend c-rescale)
-Results land in `~/simulations/bench/benchmark_summary.log` on the HPC.
+### Benchmark results (job 968167, COMPLETE on HPC A100)
+See `~/simulations/bench/benchmark_summary.log` on HPC.
 
-### Other validated recommendations (waiting on benchmark + approval)
-- `verlet-buffer-tolerance=0.005` (safe, GROMACS default)
-- `nstcalcenergy=1000` (docs recommend for GPU-resident)
-- `-pin on` + drop forced `OMP_NUM_THREADS` (thread pinning)
-- **A100 already staged** (profile requests `centos=icelake`)
-- bsc1/amber14sb DNA correction: **NOT available on this HPC** — external
-  acquisition required, high effort. Not a default.
+| Config | ns/day | hour/ns | LINCS |
+|--------|--------|---------|-------|
+| baseline (nst400/vbt002/nce500) | 39.259 | 0.611 | 0 |
+| nstlist=100 | 43.469 | 0.552 | 0 |
+| vbt=0.005 | 41.775 | 0.575 | 0 |
+| nstlist=40 | 39.661 | 0.605 | 0 |
+| nce=1000 | 39.181 | 0.613 | 0 |
+| Berendsen NPT | 39.678 | 0.605 | 0 |
+| C-rescale NPT | grompp FAILED | — | — |
 
-### Validation run status (BLM-cMYC 1ns)
-- Setup ✅, EM ✅, NVT ✅, NPT ✅ (Berendsen — see barostat benchmark)
-- Production: ran on V100 at ~20 ns/day, **over-ran 1ns to ~3ns** because of the
-  chunking bug above (job 967992, likely done/failed by now)
-- The pipeline is PROVEN end-to-end (setup through production).
+**C-rescale failure**: benchmark MDP typo — duplicate `pcoupl` line + missing `pcoupltype = isotropic`.
+NOT a GROMACS version issue. Fixed MDP uploaded to HPC (`bench/mdp_npt_crescale_fixed.mdp`).
+
+**Combined nstlist=100+vbt=0.005 benchmark**: MDP uploaded (`bench/mdp_combined100_005.mdp`).
+Job 968312 submitted, running now. Awaiting results.
+
+**Recommendation so far**: nstlist=100 + vbt=0.005 (estimated ~17% speedup). Need combined benchmark to confirm additive.
+
+### HPC validation status (BLM-cMYC 1ns)
+- Setup ✅, EM ✅, NVT ✅, NPT ✅ (Berendsen)
+- Production: job 967992 over-ran (old bug, killed). New code deployed.
+- **Production walltime-interruption validation: NOT YET DONE**
+- All recent production jobs (968267–968291) failed at startup (qdel'd during debugging, no GPU nodes, module issues).
+- `output/production/` has stale `md.tpr` and `md.tpr.tmp.tpr` from failed attempts. No checkpoint. No marker.
+- Profile currently has `centos=icelake` removed (was blocking on no A100 nodes). Restore before 500ns runs.
 
 ### Immediate next actions
-1. Stop/clean the over-running validation production if still alive.
-2. Implement the extend-from-checkpoint chunking fix in `run_stage_production`
-   + `run.sh` (per-chunk submit / resubmit until PRODUCTION_NS).
-3. Read benchmark results, adopt validated MDP/barostat changes.
-4. Re-run the 1ns validation to confirm it stops at exactly 1 ns.
+1. **Wait for benchmark job 968312** to finish. Check `~/simulations/bench/run_final_bench.sh.o968312`.
+2. **Run production walltime-interruption validation**: submit with PROD_WALLTIME=00:05:00, wait for interruption, re-submit, verify reaches 1000 ps. Use `run.sh submit` with proper state (setup+eq marked completed).
+3. **Update default MDPs** if benchmark results justify (nstlist=100, vbt=0.005).
+4. **Restore `centos=icelake` in profile** before 500ns runs.
+5. **Apply C-rescale to production MDP** after validation (replace Berendsen for correct ensemble).
+
+### HPC profile gotcha (DO NOT REPEAT)
+- `SELECT_GPU` currently has NO `centos=icelake` constraint (removed to unblock GPU access when A100s were busy).
+- **Restore it before running 500ns production**: `sed -i 's|ngpus=%GPUS%"|ngpus=%GPUS%:centos=icelake"|' profiles/iitd.sh`
+- PBS uses `-P` for project, not `-A`. Profile has `SUBMIT_ACCOUNT="-P %ACCOUNT%"`.
+- `qdel -f` is invalid on IITD PBS. Use `qdel` without flags.
+- A100 nodes (`aice*`) are often busy. V100 (`vsky*`) available. Job requests `centos=icelake` for A100.
+- To submit without A100 constraint: remove `centos=icelake` from SELECT_GPU temporarily.
+- Benchmark jobs run on A100 (~43 ns/day). V100 runs at ~20 ns/day.
+- `expect` chokes on `{}`, `[0-9]`, `$` in SSH commands. Upload `.sh` scripts instead of inline commands.
 
 ---
 
@@ -302,13 +309,16 @@ If a stage finishes suspiciously fast, it likely FAILED (crash), not completed.
 | 14 | trajectory overwritten | missing `-append` | add `-append` to production |
 | 15 | NPT blows up / segfault | Parrinello-Rahman in equilibration | Berendsen NPT, PR production |
 | 16 | grompp aborts on 2 warnings | `-maxwarn 1` too strict | stage-specific + warning check |
-| 17 | production over-runs chunk | `-maxh` stops at walltime, not CHUNK_NS | extend-from-checkpoint (`convert-tpr -until` from md.cpt) — NOT per-chunk tpr (skips time) |
+| 17 | production over-runs chunk | `-maxh` stops at walltime, not CHUNK_NS | **IMPLEMENTED, NOT VERIFIED**: extend-from-checkpoint in `lib/stages.sh`. Atomic TPR replacement. Stale lock recovery. `-nsteps -1` removed. Deployed to HPC. All production jobs so far failed at startup — HPC validation pending. |
 
-### Known benchmark findings (pending final adoption)
-- npt barostat: docs recommend **C-rescale** over Berendsen (correct ensemble, as stable). Benchmark in progress.
-- `verlet-buffer-tolerance=0.005` = GROMACS default, forces identical, safe.
-- `nstcalcenergy=1000` recommended for GPU-resident.
-- `nstlist`: GROMACS docs say 20-40 often best on GPU; our 400 may be high (benchmark pending).
+### Benchmark findings (COMPLETE — job 968167 + 968312)
+- **nstlist=100**: 43.5 ns/day (+10.7% vs baseline 39.3). 0 LINCS. **ADOPT.**
+- **vbt=0.005**: 41.8 ns/day (+6.4%). Same physics. **ADOPT.**
+- **nstcalcenergy=1000**: 39.2 ns/day (-0.2%). **DO NOT adopt.**
+- **nstlist=40**: 39.7 ns/day (+1.0%). Negligible. Keep nstlist=100.
+- **Berendsen NPT**: 39.7 ns/day. Performance fine. Keep for equilibration.
+- **C-rescale NPT**: grompp failed (MDP typo: duplicate pcoupl + missing pcoupltype). Fixed MDP on HPC. Need clean benchmark run.
+- **Combined nstlist=100+vbt=0.005**: Job 968312 running. Check `~/simulations/bench/run_final_bench.sh.o968312`.
 - amber14sb + **bsc1** DNA correction: NOT on this HPC; external source needed.
 
 ---
@@ -363,6 +373,30 @@ for p in projects/blm_kras_rep*; do
 done
 wait
 ```
+
+---
+
+## Agent Skills
+
+Skills live in `.agent/skills/` and provide structured guidance for specific tasks.
+
+### input-preparation
+
+**Purpose:** Validates inputs, explains constraints, recommends defaults, and orchestrates project setup.
+
+**Activates when:** User creates a project, reviews config, checks PDB readiness, selects force fields, or diagnoses input failures.
+
+**Files:**
+
+| File | Responsibility |
+|------|---------------|
+| `SKILL.md` | Entry point: purpose, activation, responsibilities, principles |
+| `workflow.md` | How the agent thinks through a preparation task |
+| `playbook.md` | Operational knowledge: repository structure, validation rules, decision logic |
+
+**Scripts this skill executes:** `setup/init.sh`, `setup/validate.sh`, `forcefields/get-ff.sh`
+
+**Scripts this skill never executes:** `run.sh submit`, `lib/stages.sh`, `lib/gmx.sh`, `lib/scheduler.sh`
 
 ---
 
