@@ -1,0 +1,131 @@
+#!/bin/bash
+# fake_gmx — mock GROMACS binary for testing production loop.
+# Behavior is driven by environment variables and file contents.
+#
+# Env vars:
+#   FAKE_PROGRESS_PS  — sim time per mdrun call (default: 20000 ps)
+#   FAKE_WALL_CAP_PS  — max sim time per mdrun call (walltime interrupt; default: no cap)
+#   FAKE_ZERO         — if 1, mdrun makes no progress
+#   FAKE_FAIL         — if 1, mdrun exits 1 (crash)
+#   FAKE_GROMPP_FAIL  — if 1, grompp exits 1
+#
+# File conventions:
+#   md.tpr — fake TPR. "target = <ps>" line means chunk end.
+#            Absent or "target = -1" means infinite (nsteps=-1).
+#   md.cpt — fake checkpoint. "t = <ps>" and "step = <n>" lines.
+#   md.xtc, md.edr, md.log, md.gro — created by mdrun (existence = sentinel)
+
+case "$1" in
+    dump)
+        shift
+        # Parse: gmx dump -cp <file>
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                -cp) cpt="$2"; shift 2 ;;
+                *) shift ;;
+            esac
+        done
+        [ -f "$cpt" ] || exit 1
+        t=$(awk '/^t = /{print $3; exit}' "$cpt")
+        step=$(awk '/^step = /{print $3; exit}' "$cpt")
+        [ -z "$t" ] && { echo "ERROR: no t= in $cpt" >&2; exit 1; }
+        echo "t = $t"
+        [ -n "$step" ] && echo "step = $step"
+        exit 0
+        ;;
+    check)
+        shift
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                -f) cpt="$2"; shift 2 ;;
+                *) shift ;;
+            esac
+        done
+        [ -f "$cpt" ] || exit 1
+        t=$(awk '/^t = /{print $3; exit}' "$cpt")
+        [ -z "$t" ] && exit 1
+        echo "Last frame         -1 time $t" >&2
+        exit 0
+        ;;
+    convert-tpr)
+        shift
+        src="" target="" dest=""
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                -s) src="$2"; shift 2 ;;
+                -until) target="$2"; shift 2 ;;
+                -o) dest="$2"; shift 2 ;;
+                *) shift ;;
+            esac
+        done
+        [ -n "$dest" ] || { echo "ERROR: convert-tpr needs -o" >&2; exit 1; }
+        echo "target = $target" > "$dest"
+        echo "Reading file ${src:-md.tpr}" >&2
+        exit 0
+        ;;
+    mdrun)
+        shift
+        deffnm="" cpt="" append=0
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                -deffnm) deffnm="$2"; shift 2 ;;
+                -cpi) cpt="$2"; shift 2 ;;
+                -append) append=1; shift ;;
+                -maxh) shift 2 ;;
+                -nsteps) shift 2 ;;
+                -s) shift 2 ;;
+                -v) shift ;;
+                *) shift ;;
+            esac
+        done
+        [ -n "$deffnm" ] || { echo "ERROR: mdrun needs -deffnm" >&2; exit 1; }
+        tpr="${deffnm}.tpr"
+        # Read current time
+        cur=0
+        [ -f "$cpt" ] && cur=$(awk '/^t = /{print $3; exit}' "$cpt")
+        [ -z "$cur" ] && cur=0
+        # Read target from tpr
+        target=$(awk -v def="999999999" '/^target =/{v=$3; if(v<0) print def; else print v; exit}' "$tpr" 2>/dev/null)
+        [ -z "$target" ] && target=999999999
+        # Advance
+        progress=${FAKE_PROGRESS_PS:-20000}
+        wall_cap=${FAKE_WALL_CAP_PS:-999999999}
+        new_t=$(awk -v c="$cur" -v p="$progress" -v w="$wall_cap" -v tgt="$target" \
+            'BEGIN{adv=p; if(adv>w) adv=w; nt=c+adv; if(nt>tgt) nt=tgt; printf "%.6f", nt}')
+        # Handle zero-progress
+        [ "${FAKE_ZERO:-0}" = "1" ] && new_t="$cur"
+        # Write checkpoint
+        new_step=$(awk -v t="$new_t" 'BEGIN{printf "%d", t/0.002}')
+        echo "t = $new_t" > "${deffnm}.cpt"
+        echo "step = $new_step" >> "${deffnm}.cpt"
+        # Write sentinels
+        touch "${deffnm}.xtc" "${deffnm}.edr" "${deffnm}.log" "${deffnm}.gro"
+        # Handle crash
+        [ "${FAKE_FAIL:-0}" = "1" ] && exit 1
+        exit 0
+        ;;
+    grompp)
+        shift
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                -o) outf="$2"; shift 2 ;;
+                *) shift ;;
+            esac
+        done
+        [ "${FAKE_GROMPP_FAIL:-0}" = "1" ] && exit 1
+        [ -n "$outf" ] && echo "target = -1" > "$outf"
+        echo "Reading file mdp/md.mdp" >&2
+        echo "Reading file ions.gro" >&2
+        echo "Reading topol.top" >&2
+        echo "Writing run.tpr" >&2
+        exit 0
+        ;;
+    --version)
+        echo "GROMACS Fake 2023.2"
+        exit 0
+        ;;
+    *)
+        echo "fake_gmx: unknown command: $1" >&2
+        exit 1
+        ;;
+esac
