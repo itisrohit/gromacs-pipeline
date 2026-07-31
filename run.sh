@@ -79,6 +79,7 @@ cmd_submit() {
 set -euo pipefail
 cd "$PROJECT_DIR"
 PIPELINE_DIR="$PIPELINE_DIR"
+source "\$PROJECT_DIR/config.sh"
 source "\$PIPELINE_DIR/profiles/\$CLUSTER.sh"
 source "\$PIPELINE_DIR/lib/gmx.sh"
 source "\$PIPELINE_DIR/lib/stages.sh"
@@ -122,6 +123,7 @@ SCRIPT
 set -euo pipefail
 cd "$PROJECT_DIR"
 PIPELINE_DIR="$PIPELINE_DIR"
+source "\$PROJECT_DIR/config.sh"
 source "\$PIPELINE_DIR/profiles/\$CLUSTER.sh"
 source "\$PIPELINE_DIR/lib/gmx.sh"
 source "\$PIPELINE_DIR/lib/stages.sh"
@@ -158,6 +160,7 @@ SCRIPT
 set -euo pipefail
 cd "$PROJECT_DIR"
 PIPELINE_DIR="$PIPELINE_DIR"
+source "\$PROJECT_DIR/config.sh"
 source "\$PIPELINE_DIR/profiles/\$CLUSTER.sh"
 source "\$PIPELINE_DIR/lib/gmx.sh"
 source "\$PIPELINE_DIR/lib/stages.sh"
