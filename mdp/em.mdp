@@ -1,17 +1,29 @@
-; Energy minimization
+; =============================================================================
+; ENERGY MINIMIZATION (em.mdp)
+; =============================================================================
+; Removes bad contacts / high forces from the built system before any MD.
+; Purpose: relax the structure so dynamics start from a stable configuration.
+
 ; ⚠️ grompp runs with -maxwarn 0 here — no warnings tolerated. If EM grompp
 ;    aborts on a warning, fix the topology/MDP rather than raising maxwarn.
-integrator              = steep
-emtol                   = 1000.0
-emstep                  = 0.01
-nsteps                  = 50000
+
+integrator              = steep       ; steepest-descent minimizer. Simple and robust.
+emtol                   = 1000.0      ; stop when max force < 1000 kJ/mol/nm
+                                      ; (standard convergence criterion).
+emstep                  = 0.01        ; minimization step size (nm).
+nsteps                  = 50000       ; max steps before giving up. If it hits this
+                                      ; without converging, check the structure.
+
+; ── Non-bonded ──
 cutoff-scheme           = Verlet
-nstlist                 = 20
+nstlist                 = 20          ; neighbor list every 20 steps (EM needs frequent updates).
 rlist                   = 1.0
 coulombtype             = PME
 rcoulomb                = 1.0
 vdwtype                 = Cut-off
 rvdw                    = 1.0
 DispCorr                = EnerPres
-constraints             = none
-define                  = -DPOSRES
+
+; ── Constraints / restraints ──
+constraints             = none        ; no constraints during EM (allow full relaxation).
+define                  = -DPOSRES    ; keep solute atoms restrained while the solvent relaxes.

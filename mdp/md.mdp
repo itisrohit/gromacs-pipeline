@@ -1,46 +1,82 @@
-; Production MD
-; ⚠️ DO NOT change pcoupl to Berendsen — production needs Parrinello-Rahman
-;    for the correct isothermal-isobaric ensemble.
-; ⚠️ DO NOT add mts=yes — it conflicts with -bonded gpu ("Cannot run with
-;    multiple time stepping") and provides no benefit with -update gpu.
-; ⚠️ nsteps=-1 is required — mdrun uses -maxh to stop each chunk, then
-;    resumes from checkpoint via -cpi -append.
-; ⚠️ tc-grps and comm-grps MUST match the index groups (Protein_DNA,
-;    Water_Ions) created by gmx select.
-integrator              = md
-dt                      = 0.002
-nstxout-compressed      = 25000
-nstenergy               = 5000
-nstlog                  = 5000
-nstcalcenergy           = 500
-nstcomm                 = 500
-continuation            = yes
-constraint_algorithm    = lincs
-constraints             = h-bonds
-lincs_iter              = 1
-lincs_order             = 4
-cutoff-scheme           = Verlet
-nstlist                 = 400
-rlist                   = 1.0
-verlet-buffer-tolerance = 0.002
-coulombtype             = PME
-rcoulomb                = 1.0
-fourierspacing          = 0.12
-pme_order               = 4
-vdwtype                 = Cut-off
-rvdw                    = 1.0
-DispCorr                = EnerPres
-tcoupl                  = v-rescale
-tc-grps                 = Protein_DNA Water_Ions
-tau_t                   = 0.1 0.1
-ref_t                   = 300 300
-pcoupl                  = Parrinello-Rahman
-pcoupltype              = isotropic
-tau_p                   = 5.0
-ref_p                   = 1.0
-compressibility         = 4.5e-5
-pbc                     = xyz
-gen_vel                 = no
-nsteps                  = -1
-comm-mode               = Linear
-comm-grps               = Protein_DNA Water_Ions
+; =============================================================================
+; PRODUCTION MD (md.mdp)
+; =============================================================================
+; This is the long production simulation that produces your trajectory.
+; Each parameter below explains WHAT it controls and WHY it is set this way.
+
+; ⚠️ DO NOT change these:
+;   - pcoupl MUST be Parrinello-Rahman (correct ensemble for production)
+;   - nsteps=-1 is REQUIRED (mdrun uses -maxh to stop each chunk)
+;   - DO NOT add mts=yes (conflicts with -bonded gpu)
+;   - tc-grps / comm-grps MUST match the index groups from gmx select
+
+integrator              = md          ; "md" = molecular dynamics (the integrator)
+                                      ; Only change for special methods (not for production).
+
+dt                      = 0.002       ; timestep in ps = 2 fs. Standard for atomistic MD
+                                      ; with constraints=h-bonds. Do NOT raise to 4 fs
+                                      ; unless you use hydrogen mass repartitioning.
+
+; ── Output frequency ────────────────────────────────────────────────────────
+; All "nst*" = every N steps. 1 step = 0.002 ps. So 50000 steps = 100 ps.
+nstxout-compressed      = 25000       ; save compressed trajectory every 50 ps.
+                                      ; 10,000 frames over 500 ns — standard for
+                                      ; contacts, H-bonds, RMSD, RMSF, Rg, distances.
+nstenergy               = 5000        ; save energy block every 10 ps (stability monitoring).
+nstlog                  = 5000        ; write log entry every 10 ps (diagnostics).
+nstcalcenergy           = 500         ; compute energy every 1 ps. In GPU-resident mode a
+                                      ; higher value (e.g. 1000) reduces GPU-CPU sync cost.
+nstcomm                 = 500         ; remove center-of-mass motion every 1 ps.
+                                      ; Should match nstcalcenergy to avoid extra syncs.
+; Note: nstxout / nstvout / nstfout are NOT set = never write full-precision
+; coordinates / velocities / forces. They are not needed for structural analysis.
+
+; ── Constraints ─────────────────────────────────────────────────────────────
+continuation            = yes         ; continuing from the previous stage (NPT).
+constraint_algorithm    = lincs       ; LINCS = fast, accurate bond constraint solver.
+constraints             = h-bonds     ; constrain only bonds involving hydrogen.
+                                      ; Allows dt=2 fs; standard for all atomistic MD.
+lincs_iter              = 1           ; LINCS iteration count (default, fine).
+lincs_order             = 4           ; LINCS expansion order (default, fine).
+
+; ── Non-bonded interactions ─────────────────────────────────────────────────
+cutoff-scheme           = Verlet      ; Verlet pair-list scheme (modern default, GPU-friendly).
+nstlist                 = 400         ; rebuild neighbor list every 400 steps (0.8 ps).
+                                      ; High value = fewer rebuilds on GPU = faster.
+                                      ; GROMACS auto-adjusts the buffer if needed.
+rlist                   = 1.0         ; neighbor-list cutoff (nm). Auto-grown by Verlet.
+verlet-buffer-tolerance = 0.002       ; max allowed energy drift (kJ/mol/ns/particle)
+                                      ; from the buffer region. Lower = more accurate
+                                      ; neighbor list but slower. 0.005 (GROMACS default)
+                                      ; is also safe and slightly faster. Forces are
+                                      ; IDENTICAL either way — this only controls how
+                                      ; often the list rebuilds.
+coulombtype             = PME         ; Particle-Mesh Ewald for long-range electrostatics.
+rcoulomb                = 1.0         ; real-space Coulomb cutoff (nm).
+fourierspacing          = 0.12        ; PME grid spacing (nm). Finer = more accurate/slower.
+pme_order               = 4           ; PME interpolation order (4 = cubic, standard).
+vdwtype                 = Cut-off     ; simple cutoff for van der Waals.
+rvdw                    = 1.0         ; vdW cutoff (nm).
+DispCorr                = EnerPres    ; long-range dispersion correction for energy/pressure.
+
+; ── Thermostat (temperature) ────────────────────────────────────────────────
+tcoupl                  = v-rescale   ; velocity-rescaling thermostat (stable, canonical).
+tc-grps                 = Protein_DNA Water_Ions   ; ⚠️ MUST match the index groups.
+tau_t                   = 0.1 0.1     ; coupling time constant (ps) for each group.
+ref_t                   = 300 300     ; target temperature (K) for each group.
+
+; ── Barostat (pressure) ─────────────────────────────────────────────────────
+pcoupl                  = Parrinello-Rahman   ; ⚠️ correct ensemble for production.
+                                      ; DO NOT use Berendsen here (production needs PR).
+pcoupltype              = isotropic   ; pressure coupling in all directions equally.
+tau_p                   = 5.0         ; pressure coupling time constant (ps).
+ref_p                   = 1.0         ; target pressure (bar).
+compressibility         = 4.5e-5      ; water compressibility (bar^-1), standard.
+
+; ── Periodic boundary / COM motion ──────────────────────────────────────────
+pbc                     = xyz         ; 3D periodic boundary conditions.
+gen_vel                 = no          ; no velocity generation (continuing from NPT).
+nsteps                  = -1          ; ⚠️ REQUIRED — run until mdrun's -maxh stops it,
+                                      ; so each chunk runs the walltime then checkpoints.
+comm-mode               = Linear      ; remove center-of-mass motion linearly.
+comm-grps               = Protein_DNA Water_Ions   ; ⚠️ MUST match the index groups.

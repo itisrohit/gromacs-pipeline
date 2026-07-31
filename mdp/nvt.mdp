@@ -1,24 +1,36 @@
-; NVT equilibration
-; ⚠️ pcoupl must stay "no" — pressure coupling belongs in NPT, not NVT.
-; ⚠️ tc-grps and comm-grps MUST match the index groups (Protein_DNA,
-;    Water_Ions) created by gmx select.
-define                  = -DPOSRES
-integrator              = md
-nsteps                  = 50000
-dt                      = 0.002
-nstxout-compressed      = 5000
-nstenergy               = 5000
-nstlog                  = 5000
-nstcalcenergy           = 500
-nstcomm                 = 500
-continuation            = no
+; =============================================================================
+; NVT EQUILIBRATION (nvt.mdp)
+; =============================================================================
+; Heats the system to 300 K at fixed volume. Purpose: equilibrate temperature
+; before adding pressure coupling in NPT.
+
+; ⚠️ pcoupl MUST stay "no" — pressure coupling belongs in NPT, not NVT.
+; ⚠️ tc-grps / comm-grps MUST match the index groups (Protein_DNA, Water_Ions).
+
+define                  = -DPOSRES    ; apply position restraints to solute heavy atoms
+                                      ; (keeps the structure stable while heating).
+integrator              = md          ; molecular dynamics integrator.
+nsteps                  = 50000       ; 50,000 steps x 2 fs = 100 ps of NVT.
+dt                      = 0.002       ; timestep 2 fs (standard with h-bonds constraints).
+
+; ── Output frequency ──
+nstxout-compressed      = 5000        ; trajectory every 10 ps (dense, for stability checks).
+nstenergy               = 5000        ; energy every 10 ps.
+nstlog                  = 5000        ; log every 10 ps.
+nstcalcenergy           = 500         ; compute energy every 1 ps.
+nstcomm                 = 500         ; remove COM motion every 1 ps (matches nstcalcenergy).
+
+; ── Constraints ──
+continuation            = no          ; first MD stage after EM (no velocities yet).
 constraint_algorithm    = lincs
-constraints             = h-bonds
+constraints             = h-bonds     ; constrain hydrogen bonds only.
 lincs_iter              = 1
 lincs_order             = 4
+
+; ── Non-bonded ──
 cutoff-scheme           = Verlet
-verlet-buffer-tolerance = 0.002
-nstlist                 = 400
+verlet-buffer-tolerance = 0.002       ; neighbor-list accuracy (see md.mdp for details).
+nstlist                 = 400         ; neighbor list rebuild frequency.
 rlist                   = 1.0
 coulombtype             = PME
 rcoulomb                = 1.0
@@ -27,14 +39,23 @@ pme_order               = 4
 vdwtype                 = Cut-off
 rvdw                    = 1.0
 DispCorr                = EnerPres
-tcoupl                  = v-rescale
-tc-grps                 = Protein_DNA Water_Ions
-tau_t                   = 0.1 0.1
-ref_t                   = 300 300
-pcoupl                  = no
-gen_vel                 = yes
-gen_temp                = 300
-gen_seed                = -1
+
+; ── Thermostat ──
+tcoupl                  = v-rescale   ; velocity-rescaling thermostat.
+tc-grps                 = Protein_DNA Water_Ions   ; ⚠️ MUST match index groups.
+tau_t                   = 0.1 0.1     ; coupling time constant (ps).
+ref_t                   = 300 300     ; target temperature 300 K.
+
+; ── Pressure ──
+pcoupl                  = no          ; ⚠️ DO NOT enable pressure here — that is NPT's job.
+
+; ── Velocity generation (first MD stage) ──
+gen_vel                 = yes         ; generate initial Maxwell-Boltzmann velocities.
+gen_temp                = 300         ; at 300 K.
+gen_seed                = -1          ; random seed (-1 = time-based; set a fixed number
+                                      ; for exactly reproducible trajectories).
+
+; ── PBC / COM ──
 pbc                     = xyz
 comm-mode               = Linear
-comm-grps               = Protein_DNA Water_Ions
+comm-grps               = Protein_DNA Water_Ions   ; ⚠️ MUST match index groups.

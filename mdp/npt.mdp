@@ -1,24 +1,35 @@
-; NPT equilibration
-; ⚠️ DO NOT change pcoupl to Parrinello-Rahman here. During equilibration
-;    PR causes pressure instability and box collapse (system blows up).
-;    Berendsen is the gentle, stable barostat for equilibration.
+; =============================================================================
+; NPT EQUILIBRATION (npt.mdp)
+; =============================================================================
+; Equilibrates pressure (density) at 300 K, 1 bar. Purpose: settle the box
+; volume before production.
+
+; ⚠️ pcoupl MUST be Berendsen here. Parrinello-Rahman during equilibration
+;    causes pressure instability / box collapse (system blows up).
 ;    Production (md.mdp) uses Parrinello-Rahman instead.
-; ⚠️ tc-grps and comm-grps MUST match the index groups (Protein_DNA,
-;    Water_Ions) created by gmx select — a mismatch aborts grompp.
-define                  = -DPOSRES
+; ⚠️ tc-grps / comm-grps MUST match the index groups (Protein_DNA, Water_Ions).
+
+define                  = -DPOSRES    ; position restraints on solute (keeps structure
+                                      ; stable while the box settles).
 integrator              = md
-nsteps                  = 500000
-dt                      = 0.002
-nstxout-compressed      = 5000
-nstenergy               = 5000
-nstlog                  = 5000
+nsteps                  = 500000      ; 500,000 x 2 fs = 1 ns of NPT (1 ns equilibration).
+dt                      = 0.002       ; timestep 2 fs.
+
+; ── Output frequency ──
+nstxout-compressed      = 5000        ; trajectory every 10 ps.
+nstenergy               = 5000        ; energy every 10 ps.
+nstlog                  = 5000        ; log every 10 ps.
 nstcalcenergy           = 500
 nstcomm                 = 500
-continuation            = yes
+
+; ── Constraints ──
+continuation            = yes         ; continuing from NVT (velocities exist).
 constraint_algorithm    = lincs
 constraints             = h-bonds
 lincs_iter              = 1
 lincs_order             = 4
+
+; ── Non-bonded ──
 cutoff-scheme           = Verlet
 verlet-buffer-tolerance = 0.002
 nstlist                 = 400
@@ -30,16 +41,24 @@ pme_order               = 4
 vdwtype                 = Cut-off
 rvdw                    = 1.0
 DispCorr                = EnerPres
+
+; ── Thermostat ──
 tcoupl                  = v-rescale
-tc-grps                 = Protein_DNA Water_Ions
+tc-grps                 = Protein_DNA Water_Ions   ; ⚠️ MUST match index groups.
 tau_t                   = 0.1 0.1
 ref_t                   = 300 300
-pcoupl                  = Berendsen
-pcoupltype              = isotropic
-tau_p                   = 5.0
-ref_p                   = 1.0
-compressibility         = 4.5e-5
-gen_vel                 = no
+
+; ── Barostat (pressure) ──
+pcoupl                  = Berendsen   ; ⚠️ Berendsen = gentle/stable for EQUILIBRATION.
+                                      ; DO NOT use Parrinello-Rahman here (it destabilizes
+                                      ; during equilibration).
+pcoupltype              = isotropic   ; couple pressure in all directions equally.
+tau_p                   = 5.0         ; coupling time constant (ps).
+ref_p                   = 1.0         ; target pressure 1 bar.
+compressibility         = 4.5e-5      ; water compressibility (bar^-1).
+
+; ── Velocity / PBC / COM ──
+gen_vel                 = no          ; continuing from NVT — keep existing velocities.
 pbc                     = xyz
 comm-mode               = Linear
-comm-grps               = Protein_DNA Water_Ions
+comm-grps               = Protein_DNA Water_Ions   ; ⚠️ MUST match index groups.
