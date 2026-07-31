@@ -58,7 +58,10 @@ run_stage_topol() {
     # absolute-style paths that resolve incorrectly when the chain
     # topologies are in a subdirectory
     for itp in output/setup/topol_*.itp; do
-        [ -f "$itp" ] && sed -i "s|#include \"output/setup/|#include \"|g" "$itp" 2>/dev/null || true
+        if [ -f "$itp" ]; then
+            sed "s|#include \"output/setup/|#include \"|g" "$itp" > "$itp.tmp" 2>/dev/null
+            mv "$itp.tmp" "$itp" 2>/dev/null || true
+        fi
     done
 
     echo "TOPOL: Complete"
