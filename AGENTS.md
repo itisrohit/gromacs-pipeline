@@ -43,12 +43,13 @@ known pitfalls, and how to get an end-to-end run working.
 
 ## CURRENT STATUS — READ THIS FIRST (as of the last session)
 
-**Phase**: Production chunking VALIDATED on HPC. Trajectory preparation IMPLEMENTED. Ready for 1ns completion + 500ns × 3 runs.
+**Phase**: Level 1 validation IN PROGRESS. Job 968580 queued on HPC, waiting for A100 slot.
 
 ### Recent fixes (committed)
 1. **TPR filename mismatch** (`df3012e`): `convert-tpr -o md.tpr.tmp` created `md.tpr.tmp.tpr` (GROMACS appends `.tpr`). Fixed to use `md.tpr.tmp.tpr` consistently. Validated on HPC with real GROMACS.
 2. **fake_gmx awk field index** (`1d1c37e`): `convert-tpr` writes `target = value` (3 fields), but mdrun awk read `$2` (`=`) instead of `$3` (value). Fixed. Integration tests: 17/18 pass.
-3. **Trajectory preparation** (`0a89774`): Added `post/prepare.sh` for PBC correction, centering, fitting, stripping. Tested on HPC with real production trajectory.
+3. **Trajectory preparation** (`0a89774`): Added `post/prepare.sh` for PBC correction, centering, fitting, stripping. Tested on HPC with real production trajectory. Refactored: removed dead code, extracted `get_group_number()` helper.
+4. **AGENTS.md updates** (`26100f9`): Added validation hierarchy (Level 1/2/3), operational commands, post-Level-1 roadmap, verified HPC status.
 
 ### Production chunking (IMPLEMENTED, DEPLOYED, VALIDATED)
 The extend-from-checkpoint loop is in `lib/stages.sh:run_stage_production()`.
