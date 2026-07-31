@@ -76,7 +76,7 @@ Single source of truth for all user-visible settings. No variables are hardcoded
 | `ANION` | yes | Anion species for genion |
 | `PRODUCTION_NS` | yes | Total simulation length (ns) |
 | `CHUNK_NS` | yes | Walltime chunk length (ns), must be ≤ PRODUCTION_NS |
-| `TC_GROUPS` | no | Temperature coupling group selections for gmx select |
+| `TC_GROUPS` | no | Removed. Groups are built by `gmx select` (`not (group Water or group Ion)` / `group Water or group Ion`) |
 | `SETUP_CPUS` | no | Default: 8 |
 | `SETUP_MEM` | no | Default: 8GB |
 | `SETUP_WALLTIME` | no | Default: 00:30:00 |

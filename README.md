@@ -307,7 +307,7 @@ bash gromacs-pipeline/run.sh submit projects/my_system
 | box | `editconf -bt -d` | → `box.gro` |
 | solvate | `solvate -cs spc216.gro` | → `solv.gro` |
 | ions | `grompp` + `genion -neutral -conc` | → `ions.gro` |
-| index | `make_ndx` | → `index.ndx` (Protein_DNA, Water_Ions) |
+| index | `gmx select` | → `index.ndx` (Protein_DNA, Water_Ions) |
 | EM | `grompp` + `mdrun` | → `em.gro` (convergence checked) |
 | NVT | `grompp` + `mdrun -cpi` (GPU) | → `nvt.gro` |
 | NPT | `grompp` + `mdrun -cpi` (GPU) | → `npt.gro` |
@@ -356,7 +356,8 @@ submit all three. They run in parallel; each chunks production sequentially.
 | `FORCEFIELD not found` | Force field not installed. Run `get-ff.sh install <name>` |
 | `qsub` prints usage | Profile's SELECT flag missing `-l select=` prefix |
 | Job fails at genion | Partial force field missing ion definitions. Run `get-ff.sh complete <name>` |
-| Job fails at make_ndx | Group numbering collision. Check `output/setup/index.ndx` |
+| `-cpi: Too many values` | GROMACS version not parsed (MPI warning pollution). Use fixed `gmx.sh` |
+| `Protein_DNA not found` | `Water`/`Ion` groups missing. Check `solv.gro`/`ions.gro` |
 | `PROJECT_DIR: unbound variable` | Job script generated before the PROJECT_DIR hardcode fix. Re-run submit |
 | EM doesn't converge | Check `em.log`; may need more steps or looser restraints |
 
