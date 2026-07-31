@@ -62,29 +62,35 @@ gromacs-pipeline/
 
 ## Quick start (5 steps)
 
+> **Where**: steps 1-2 are **LOCAL** (your Mac). Steps 3-5 are **ON THE HPC**.
+
 ```bash
+# ── RUN LOCALLY (on your Mac) ──
 # 1. Create a project
 bash gromacs-pipeline/setup/init.sh projects/my_system
 
-# 2. Place your structure and edit config
-#    projects/my_system/input/system.pdb
-#    projects/my_system/config.sh   (set FORCEFIELD, lengths, resources)
+# 2. Place your structure, prepare it, and edit config
+bash projects/my_system/prep/prepare.sh            # → input/system.pdb
+#    edit projects/my_system/config.sh  (set FORCEFIELD, lengths, resources)
 
-# 3. Install a force field (one-time)
+# 3. Upload the project to the HPC (see "Deploy to the HPC" below)
+
+# ── RUN ON THE HPC ──
+# 4. Install a force field (one-time)
 bash gromacs-pipeline/forcefields/get-ff.sh install amber99sb-ildn
 
-# 4. Validate
+# 5. Validate and submit
 bash gromacs-pipeline/setup/validate.sh projects/my_system
-
-# 5. Submit
 bash gromacs-pipeline/run.sh submit projects/my_system
 ```
 
-Monitor with `bash gromacs-pipeline/run.sh status projects/my_system`.
+Monitor with `bash gromacs-pipeline/run.sh status projects/my_system` (on HPC).
 
 ---
 
 ## Deploy to the HPC (from your local machine)
+
+> **RUN LOCALLY** — uploads your local code/input to the HPC.
 
 The code lives in your local git repo. Upload it to the HPC with `scp`
 (you'll be prompted for your HPC password each time). Pick the commands
@@ -139,6 +145,8 @@ scp -r ../../gromacs-pipeline/* blz208818@hpc.iitd.ac.in:~/simulations/gromacs-p
 
 ### 1. Create a project
 
+> **RUN LOCALLY** — creates the project folder structure on your Mac.
+
 ```bash
 bash gromacs-pipeline/setup/init.sh projects/blm_cmyc
 ```
@@ -155,6 +163,8 @@ projects/blm_cmyc/
 ```
 
 ### 2. Prepare the structure
+
+> **RUN LOCALLY** — pure text processing, no GROMACS/HPC needed.
 
 The pipeline reads `input/system.pdb` and expects it to be GROMACS-ready:
 
@@ -175,20 +185,23 @@ hydrogens) is GROMACS.
 
 ### 3. Install a force field
 
+> **RUN ON THE HPC** — `get-ff.sh install` copies from the HPC's system GROMACS.
+> (`list`/`doctor` work anywhere; `complete` needs the system install.)
+
 ```bash
-# List available force fields
+# List available force fields (anywhere)
 bash gromacs-pipeline/forcefields/get-ff.sh list
 
-# Install from system GROMACS
+# Install from system GROMACS (on the HPC)
 bash gromacs-pipeline/forcefields/get-ff.sh install amber99sb-ildn
 
-# Install from a local path
+# Install from a local path (anywhere)
 bash gromacs-pipeline/forcefields/get-ff.sh install amber14sb /path/to/amber14sb.ff
 
 # Complete a partial force field (copy missing DNA/RNA/ion files from system)
 bash gromacs-pipeline/forcefields/get-ff.sh complete amber14sb
 
-# Check if a force field is usable
+# Check if a force field is usable (anywhere)
 bash gromacs-pipeline/forcefields/get-ff.sh doctor amber14sb
 ```
 
@@ -197,6 +210,8 @@ Force fields are stored in `gromacs-pipeline/forcefields/`. The pipeline sets
 fields are found automatically.
 
 ### 4. Edit config.sh
+
+> **RUN LOCALLY** — edit the file on your Mac, then upload it with the project.
 
 ```bash
 # projects/my_system/config.sh
@@ -223,6 +238,8 @@ PROD_GPUS=1
 
 ### 5. Validate
 
+> **RUN ON THE HPC** — needs the cluster profile and (ideally) GROMACS present.
+
 ```bash
 bash gromacs-pipeline/setup/validate.sh projects/my_system
 ```
@@ -237,6 +254,8 @@ Checks:
 
 ### 6. Submit
 
+> **RUN ON THE HPC** — submits PBS jobs to the cluster.
+
 ```bash
 bash gromacs-pipeline/run.sh submit projects/my_system
 ```
@@ -248,11 +267,15 @@ This:
 
 ### 7. Monitor
 
+> **RUN ON THE HPC** — reads job state from the cluster.
+
 ```bash
 bash gromacs-pipeline/run.sh status projects/my_system
 ```
 
 ### 8. Report
+
+> **RUN ON THE HPC** — reads simulation outputs.
 
 ```bash
 bash gromacs-pipeline/run.sh report projects/my_system
@@ -261,6 +284,9 @@ bash gromacs-pipeline/run.sh report projects/my_system
 ---
 
 ## Resume vs restart
+
+> **RUN ON THE HPC** — re-submitting, deleting outputs, and state re-init
+> all happen on the HPC.
 
 The pipeline is **idempotent** — every stage skips if its output already exists.
 This means you can re-run `run.sh submit` safely; it only submits what's incomplete.
@@ -320,6 +346,20 @@ bash gromacs-pipeline/run.sh submit projects/my_system
 ---
 
 ## Command reference
+
+### Where to run what
+
+| Command | Runs where | Purpose |
+|---------|-----------|---------|
+| `setup/init.sh <project>` | **Local** | Create a project folder |
+| `prep/prepare.sh` | **Local** | Produce `input/system.pdb` from raw model |
+| `scp` / `rsync` | **Local** | Upload code/input to HPC |
+| `get-ff.sh install <name>` | **HPC** | Copy force field from system GROMACS |
+| `setup/validate.sh <project>` | **HPC** | Check project is ready |
+| `run.sh submit <project>` | **HPC** | Submit 3 PBS jobs |
+| `run.sh status <project>` | **HPC** | Check job state |
+| `run.sh report <project>` | **HPC** | Generate completion report |
+| `setup/replicate.sh <template> <base> <n>` | **HPC** | Clone template into n replicates |
 
 ### run.sh
 
@@ -386,6 +426,9 @@ Validation succeeds only if `forcefield.itp` exists inside the directory.
 ---
 
 ## Production with replicates
+
+> **RUN ON THE HPC** — creates independent replicate projects from a local
+> template, then submits them all in parallel.
 
 Prepare ONE template project, then clone it into independent replicates:
 
