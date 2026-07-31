@@ -37,11 +37,14 @@ run_stage_topol() {
     mkdir -p output/setup
     echo "TOPOL: Generating topology..."
 
+    # Run pdb2gmx from output/setup so include paths in generated
+    # chain topologies are relative to that directory (avoids double
+    # path like output/setup/output/setup/posre.itp)
     $GMX pdb2gmx \
-        -f output/setup/complex_clean.pdb \
-        -o "$out" \
-        -p output/setup/topol.top \
-        -i output/setup/posre.itp \
+        -f "$PWD/output/setup/complex_clean.pdb" \
+        -o "$PWD/$out" \
+        -p "$PWD/output/setup/topol.top" \
+        -i "$PWD/output/setup/posre.itp" \
         -ff "$FORCEFIELD" \
         -water "$WATER_MODEL" \
         -ignh -missing -noter
@@ -50,6 +53,14 @@ run_stage_topol() {
         echo "ERROR: pdb2gmx failed to produce $out"
         exit 1
     fi
+
+    # Fix include paths in chain topology files — pdb2gmx may write
+    # absolute-style paths that resolve incorrectly when the chain
+    # topologies are in a subdirectory
+    for itp in output/setup/topol_*.itp; do
+        [ -f "$itp" ] && sed -i "s|#include \"output/setup/|#include \"|g" "$itp" 2>/dev/null || true
+    done
+
     echo "TOPOL: Complete"
 }
 
