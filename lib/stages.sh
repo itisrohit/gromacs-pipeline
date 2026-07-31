@@ -377,11 +377,16 @@ run_stage_production() {
     local gpu_flags
     gpu_flags=$(gmx_gpu_flags)
 
+    # -append requires an existing checkpoint. On the first chunk there is
+    # none, so only enable append when resuming from a prior chunk.
+    local append_flag=""
+    [ -f output/production/md.cpt ] && append_flag="-append"
+
     echo "PRODUCTION: mdrun -maxh $maxh"
     $GMX mdrun \
         -deffnm output/production/md \
         -cpi output/production/md.cpt \
-        -append \
+        $append_flag \
         -maxh "$maxh" \
         -nsteps -1 \
         $gpu_flags \
