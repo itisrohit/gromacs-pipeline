@@ -89,6 +89,11 @@ See `~/simulations/bench/benchmark_summary.log` on HPC.
   - Completed 137.2 ps (step 68600), wrote checkpoint, exited gracefully
   - Performance: 44.2 ns/day
   - Production loop correctly detected walltime exhaustion and exited
+- **Production chaining validation: NOT YET DONE**
+  - Goal: verify multiple extensions, checkpoint resume, completion detection
+  - Strategy: each PBS job completes at least one extension under normal conditions
+  - Validation tolerates small variations in completed simulation time
+  - Validates: monotonic checkpoint increase, correct target calculation, resume from latest checkpoint, continuous trajectory growth, completion detection exactly once
 - **To reach 1 ns**: re-submit with `PROD_WALLTIME="01:00:00"`. Loop resumes from 137.2 ps checkpoint.
 - MDP updated: nstlist=100, vbt=0.005
 - Profile restored: `centos=icelake` added back to SELECT_GPU
