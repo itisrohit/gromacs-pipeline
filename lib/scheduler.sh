@@ -86,7 +86,7 @@ scheduler_submit() {
 
     cmd="$cmd $script"
 
-    echo "  Submitting: $SUBMIT_CMD $name"
+    echo "  Submitting: $SUBMIT_CMD $name" >&2
     $cmd
 }
 
