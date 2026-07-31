@@ -26,11 +26,12 @@ known pitfalls, and how to get an end-to-end run working.
 
 ## CURRENT STATUS — READ THIS FIRST (as of the last session)
 
-**Phase**: Production submitted on BLM-cMYC with optimizations (nstlist=100, vbt=0.005). Waiting for A100 node.
+**Phase**: Production chunking VALIDATED on HPC. Trajectory preparation IMPLEMENTED. Ready for 1ns completion + 500ns × 3 runs.
 
 ### Recent fixes (committed)
 1. **TPR filename mismatch** (`df3012e`): `convert-tpr -o md.tpr.tmp` created `md.tpr.tmp.tpr` (GROMACS appends `.tpr`). Fixed to use `md.tpr.tmp.tpr` consistently. Validated on HPC with real GROMACS.
 2. **fake_gmx awk field index** (`1d1c37e`): `convert-tpr` writes `target = value` (3 fields), but mdrun awk read `$2` (`=`) instead of `$3` (value). Fixed. Integration tests: 17/18 pass.
+3. **Trajectory preparation** (`0a89774`): Added `post/prepare.sh` for PBC correction, centering, fitting, stripping. Tested on HPC with real production trajectory.
 
 ### Production chunking (IMPLEMENTED, DEPLOYED, VALIDATED)
 The extend-from-checkpoint loop is in `lib/stages.sh:run_stage_production()`.
@@ -57,23 +58,26 @@ See `~/simulations/bench/benchmark_summary.log` on HPC.
 | nstlist=40 | 39.661 | 0.605 | 0 | Negligible |
 | nce=1000 | 39.181 | 0.613 | 0 | Negligible |
 | Berendsen NPT | 39.678 | 0.605 | 0 | Keep for equilibration |
-| C-rescale NPT | 28.196 | 0.851 | 0 | Ran with 1 thread (see below) |
-| combined nst100+vbt005 | 25.921 | 0.926 | 0 | Ran with 1 thread (see below) |
+| C-rescale NPT | 28.196 | 0.851 | 0 | Ran with 1 thread (INVALID) |
+| combined nst100+vbt005 | 25.921 | 0.926 | 0 | Ran with 1 thread (INVALID) |
 
-**Combined + C-rescale results are INVALID** — both ran on `aice005` with 1 OpenMP thread instead of 8. The benchmark script does not set `OMP_NUM_THREADS`. The first run (nst100) inherited 8 threads from the environment; subsequent runs did not. Re-run needed with `export OMP_NUM_THREADS=8`.
+**Combined + C-rescale results are INVALID** — both ran with 1 OpenMP thread instead of 8. Re-run needed with `export OMP_NUM_THREADS=8`.
 
 **Recommendation**: nstlist=100 + vbt=0.005. Re-run combined benchmark with correct threading to confirm.
 
 ### HPC validation status (BLM-cMYC 1ns)
 - Setup ✅, EM ✅, NVT ✅, NPT ✅ (Berendsen)
-- Production: extend-from-checkpoint loop validated on HPC (convert-tpr + mv + checkpoint cycle works)
-- **Production submitted**: Job 968472.pbshpc, walltime=5min, waiting for A100 node
-- **Production walltime-interruption validation: IN PROGRESS** — job submitted, waiting to run
+- **Production walltime-interruption validation: COMPLETE** ✅
+  - Job 968472 ran on A100 (aice001), 5-min walltime
+  - Completed 137.2 ps (step 68600), wrote checkpoint, exited gracefully
+  - Performance: 44.2 ns/day
+  - Production loop correctly detected walltime exhaustion and exited
+- **To reach 1 ns**: re-submit with `PROD_WALLTIME="01:00:00"`. Loop resumes from 137.2 ps checkpoint.
 - MDP updated: nstlist=100, vbt=0.005
 - Profile restored: `centos=icelake` added back to SELECT_GPU
 
 ### Immediate next actions
-1. **Check if job 968472 ran** — verify checkpoint, resume, completion.
+1. **Re-submit production** with longer walltime to complete 1 ns.
 2. **Re-run combined benchmark** with `export OMP_NUM_THREADS=8`.
 3. **Apply nstlist=100 + vbt=0.005 to default MDPs** after benchmark confirmation.
 4. **Apply C-rescale to production MDP** after validation (replace Berendsen for correct ensemble).
@@ -303,7 +307,7 @@ If a stage finishes suspiciously fast, it likely FAILED (crash), not completed.
 | 14 | trajectory overwritten | missing `-append` | add `-append` to production |
 | 15 | NPT blows up / segfault | Parrinello-Rahman in equilibration | Berendsen NPT, PR production |
 | 16 | grompp aborts on 2 warnings | `-maxwarn 1` too strict | stage-specific + warning check |
-| 17 | production over-runs chunk | `-maxh` stops at walltime, not CHUNK_NS | **IMPLEMENTED + convert-tpr/mv VALIDATED on HPC** (`df3012e`): extend-from-checkpoint loop in `lib/stages.sh`. Atomic TPR replacement (`md.tpr.tmp.tpr`). Post-convert-tpr existence check. Stale lock recovery. `-nsteps -1` removed. convert-tpr → mv → checkpoint cycle verified on real GROMACS. **Walltime-interruption + resume NOT YET TESTED on HPC.** |
+| 17 | production over-runs chunk | `-maxh` stops at walltime, not CHUNK_NS | **FIXED and VALIDATED** (`df3012e`): extend-from-checkpoint loop in `lib/stages.sh`. Atomic TPR replacement (`md.tpr.tmp.tpr`). Post-convert-tpr existence check. Stale lock recovery. `-nsteps -1` removed. convert-tpr → mv → checkpoint cycle verified on real GROMACS. **Walltime-interruption + resume VALIDATED on HPC** (job 968472: 137.2 ps completed, checkpoint written, exited gracefully). |
 
 ### Benchmark findings (COMPLETE — job 968167 + 968361)
 - **nstlist=100**: 43.5 ns/day (+10.7% vs baseline 39.3). 0 LINCS. **ADOPT.**
