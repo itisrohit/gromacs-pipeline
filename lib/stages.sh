@@ -44,7 +44,7 @@ run_stage_topol() {
         -i output/setup/posre.itp \
         -ff "$FORCEFIELD" \
         -water "$WATER_MODEL" \
-        -ignh -missing
+        -ignh -missing -noter
 
     if [ ! -f "$out" ]; then
         echo "ERROR: pdb2gmx failed to produce $out"
