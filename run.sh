@@ -77,8 +77,9 @@ cmd_submit() {
         cat > "$PROJECT_DIR/scripts/setup.sh" << SCRIPT
 #!/bin/bash
 set -euo pipefail
-cd "$PROJECT_DIR"
+PROJECT_DIR="$PROJECT_DIR"
 PIPELINE_DIR="$PIPELINE_DIR"
+cd "\$PROJECT_DIR"
 source "\$PROJECT_DIR/config.sh"
 source "\$PIPELINE_DIR/profiles/\$CLUSTER.sh"
 source "\$PIPELINE_DIR/lib/gmx.sh"
@@ -121,8 +122,9 @@ SCRIPT
         cat > "$PROJECT_DIR/scripts/equilibration.sh" << SCRIPT
 #!/bin/bash
 set -euo pipefail
-cd "$PROJECT_DIR"
+PROJECT_DIR="$PROJECT_DIR"
 PIPELINE_DIR="$PIPELINE_DIR"
+cd "\$PROJECT_DIR"
 source "\$PROJECT_DIR/config.sh"
 source "\$PIPELINE_DIR/profiles/\$CLUSTER.sh"
 source "\$PIPELINE_DIR/lib/gmx.sh"
@@ -158,8 +160,9 @@ SCRIPT
         cat > "$PROJECT_DIR/scripts/production.sh" << SCRIPT
 #!/bin/bash
 set -euo pipefail
-cd "$PROJECT_DIR"
+PROJECT_DIR="$PROJECT_DIR"
 PIPELINE_DIR="$PIPELINE_DIR"
+cd "\$PROJECT_DIR"
 source "\$PROJECT_DIR/config.sh"
 source "\$PIPELINE_DIR/profiles/\$CLUSTER.sh"
 source "\$PIPELINE_DIR/lib/gmx.sh"
