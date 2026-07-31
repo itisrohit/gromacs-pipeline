@@ -139,11 +139,13 @@ run_stage_index() {
 
     echo "INDEX: Creating temperature coupling groups..."
 
+    # Create combined groups from default groups by name. The groups
+    # created by these expressions get auto-generated names; we rename
+    # them afterwards to match the MDP tc-grps (Protein_DNA, Water_Ions).
+    # This avoids hardcoding group numbers, which vary by system.
     $GMX make_ndx -f output/setup/ions.gro -o "$out" <<- EOF
 ! "Water" & ! "Ion"
-name 19 Protein_DNA
 "Water" | "Ion"
-name 20 Water_Ions
 q
 EOF
 
@@ -152,7 +154,19 @@ EOF
         exit 1
     fi
 
-    if ! grep -q "Protein_DNA" "$out" 2>/dev/null; then
+    # Rename the expression-created groups to the names MDP expects
+    if grep -q '^\[ !Water_&_!Ion \]' "$out" 2>/dev/null; then
+        sed -i 's/^\[ !Water_&_!Ion \]/[ Protein_DNA ]/' "$out"
+        echo "INDEX: renamed solute group to Protein_DNA"
+    fi
+    if grep -q '^\[ Water_Ion \]' "$out" 2>/dev/null; then
+        sed -i 's/^\[ Water_Ion \]/[ Water_Ions ]/' "$out"
+        echo "INDEX: renamed solvent group to Water_Ions"
+    fi
+
+    if grep -q "Protein_DNA" "$out" 2>/dev/null; then
+        echo "INDEX: Protein_DNA group present"
+    else
         echo "WARNING: Protein_DNA group not created"
     fi
     echo "INDEX: Complete"
