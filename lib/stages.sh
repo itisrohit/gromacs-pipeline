@@ -321,6 +321,7 @@ run_stage_production() {
     $GMX mdrun \
         -deffnm output/production/md \
         -cpi output/production/md.cpt \
+        -append \
         -maxh "$maxh" \
         -nsteps -1 \
         $gpu_flags \
