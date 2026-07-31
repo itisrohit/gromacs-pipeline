@@ -3,8 +3,6 @@
 A minimal, Bash-only molecular dynamics pipeline for HPC clusters (PBS / Slurm / LSF).
 Built around standard GROMACS capabilities — no Python, no workflow engines, no Docker.
 
-**Repository**: https://github.com/itisrohit/gromacs-pipeline
-
 ---
 
 ## Architecture: why 3 jobs?
@@ -67,6 +65,7 @@ gromacs-pipeline/
 │       └── fake_gmx          # Mock GROMACS for testing
 ├── docs/
 │   └── benchmark.md          # Performance benchmark report
+├── .agent/                   # Agent skills for input preparation
 ├── AGENTS.md                 # Agent/developer operations guide
 └── README.md                 # This file
 ```
@@ -150,13 +149,14 @@ bash setup/init.sh projects/blm_cmyc
 
 This creates:
 ```
-projects/blm_cmyc/
+projects/<name>/
 ├── config.sh        # edit this
 ├── input/           # place system.pdb here
 ├── mdp/             # MDP files (copied from pipeline)
 ├── output/          # setup/, equilibration/, production/, logs/
 ├── .state/          # workflow state + fingerprint
-└── prep/            # (you create this) project-specific preparation
+├── prep/            # (you create this) project-specific preparation
+└── scripts/         # generated job scripts (created on submit)
 ```
 
 ### 2. Prepare the structure
@@ -224,7 +224,7 @@ CATION="K"
 ANION="CL"
 PRODUCTION_NS=1              # total production length in ns
 CHUNK_NS=1                   # chunk length in ns (walltime-limited)
-ACCOUNT="helicases.spons"    # PBS project
+ACCOUNT="<your-account>"     # PBS project/account
 QUEUE="standard"
 SETUP_CPUS=8
 EQ_CPUS=8
@@ -458,11 +458,22 @@ Uses `tests/bin/fake_gmx` to simulate GROMACS without a GPU.
 | `Protein_DNA not found` | `Water`/`Ion` groups missing. Check `solv.gro`/`ions.gro` |
 | `PROJECT_DIR: unbound variable` | Job script generated before the PROJECT_DIR hardcode fix. Re-run submit |
 | EM doesn't converge | Check `em.log`; may need more steps or looser restraints |
+| `Invalid atomtype format` | `._` files in force field. Run `find forcefields -name '._*' -delete` |
+| `Residue type DT not found` | Partial FF missing dna.rtp. Run `get-ff.sh complete <name>` |
+| `nstcomm < nstcalcenergy` | MDP missing nstcomm. Add `nstcomm=500` |
+| NPT blows up / segfault | Parrinello-Rahman in equilibration. Use Berendsen NPT, PR production |
+
+### Debugging a failure
+
+1. Find the job log: `ls -t projects/<name>/*.o* | head -1`
+2. `tail` it. **MPI_ABORT hides the real error** — the actual message is
+   printed BEFORE the `----` separator. Read around it.
+3. `grep -B2 -A5 'Fatal|Error|NOTE|WARNING' <log>`
+4. Check the actual command that ran: `grep -A2 'Command line' <log>`
 
 ### Where logs go
 
-PBS output goes to `projects/<name>/*.o<jobid>` (in the project root) because
-IITD's PBS doesn't support custom `-o` paths. Stage-level logs:
+PBS output goes to `projects/<name>/*.o<jobid>` (in the project root). Stage-level logs:
 - `output/setup/*.log`
 - `output/equilibration/*.log`
 - `output/production/*.log`
