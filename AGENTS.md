@@ -245,6 +245,142 @@ ls output/production/PRODUCTION_COMPLETE
 bash gromacs-pipeline/run.sh submit --force projects/blm_cmyc
 ```
 
+### After Level 1 passes — what comes next
+
+Once Level 1 validation completes (5 jobs, 4 resumptions, PRODUCTION_COMPLETE created):
+
+**Step 1: Verify Level 1 results**
+- All 5 jobs completed
+- Checkpoint time increased each job
+- PRODUCTION_COMPLETE exists
+- No stale tmp files
+- Trajectory grew continuously
+
+**Step 2: Update config for 1 ns run**
+```bash
+sed -i 's/^PRODUCTION_NS=.*/PRODUCTION_NS=1/' config.sh
+sed -i 's/^CHUNK_NS=.*/CHUNK_NS=1/' config.sh
+sed -i 's/^PROD_WALLTIME=.*/PROD_WALLTIME="01:00:00"/' config.sh
+```
+
+**Step 3: Reset state and submit**
+```bash
+# Reset production state to pending
+cat > .state/workflow.json << 'STATE'
+{
+  "schema_version": 1,
+  "project": "blm_cmyc_val",
+  "initialized": "2026-07-31T11:53:58Z",
+  "phases": {
+    "setup": {"status": "completed", "job_id": ""},
+    "equilibration": {"status": "completed", "job_id": ""},
+    "production": {"status": "pending", "job_id": ""}
+  }
+}
+STATE
+
+# Submit
+cd ~/simulations && bash gromacs-pipeline/run.sh submit --force projects/blm_cmyc
+```
+
+**Step 4: After 1 ns completes, proceed to Level 2 (n=3)**
+
+### Level 2 execution plan (after Level 1 passes)
+
+**Prerequisite:** Level 1 validation passed (single-replicate chaining works).
+
+**What Level 2 validates:**
+- Replicate isolation (separate directories, state, checkpoints)
+- Parallel submission works
+- No shared state between replicates
+
+**How to execute Level 2:**
+```bash
+# On HPC, after Level 1 passes
+
+# 1. Create template from BLM-cMYC (already has setup + eq done)
+# The existing blm_cmyc project IS the template
+
+# 2. Create 3 replicates
+cd ~/simulations
+bash gromacs-pipeline/setup/replicate.sh projects/blm_cmyc blm_kras 3
+# Creates: projects/blm_kras_rep1, _rep2, _rep3
+
+# 3. Update each replicate's config for validation
+for p in projects/blm_kras_rep*; do
+    sed -i 's/^PRODUCTION_NS=.*/PRODUCTION_NS=0.5/' "$p/config.sh"
+    sed -i 's/^CHUNK_NS=.*/CHUNK_NS=0.1/' "$p/config.sh"
+    sed -i 's/^PROD_WALLTIME=.*/PROD_WALLTIME="00:02:30"/' "$p/config.sh"
+done
+
+# 4. Submit all 3 in parallel
+for p in projects/blm_kras_rep*; do
+    bash gromacs-pipeline/run.sh submit --force "$p" &
+done
+wait
+
+# 5. After all complete, verify isolation
+for p in projects/blm_kras_rep*; do
+    echo "=== $(basename $p) ==="
+    echo "md5 xtc: $(md5sum $p/output/production/md.xtc)"
+    echo "md5 cpt: $(md5sum $p/output/production/md.cpt)"
+    echo "checkpoint: $(checkpoint_time_ps $p/output/production/md.cpt)"
+    echo "complete: $([ -f $p/output/production/PRODUCTION_COMPLETE ] && echo YES || echo NO)"
+done
+```
+
+**Pass criteria for Level 2:**
+- All 3 PRODUCTION_COMPLETE exist
+- All checkpoints have different md5 (independent states)
+- All trajectories have different md5 (independent outputs)
+- Rerunning any replicate does nothing (idempotent)
+
+### After Level 2 passes — real production
+
+Once Level 2 validation completes (3 replicates independent):
+
+**Step 1: Update config for 500 ns production**
+```bash
+for p in projects/blm_kras_rep*; do
+    sed -i 's/^PRODUCTION_NS=.*/PRODUCTION_NS=500/' "$p/config.sh"
+    sed -i 's/^CHUNK_NS=.*/CHUNK_NS=50/' "$p/config.sh"
+    sed -i 's/^PROD_WALLTIME=.*/PROD_WALLTIME="24:00:00"/' "$p/config.sh"
+done
+```
+
+**Step 2: Reset state and submit**
+```bash
+for p in projects/blm_kras_rep*; do
+    # Reset state to pending
+    cat > "$p/.state/workflow.json" << STATE
+{
+  "schema_version": 1,
+  "project": "$(basename $p)",
+  "initialized": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "phases": {
+    "setup": {"status": "completed", "job_id": ""},
+    "equilibration": {"status": "completed", "job_id": ""},
+    "production": {"status": "pending", "job_id": ""}
+  }
+}
+STATE
+done
+
+# Submit all 3 in parallel
+for p in projects/blm_kras_rep*; do
+    bash gromacs-pipeline/run.sh submit --force "$p" &
+done
+wait
+```
+
+**Step 3: Monitor**
+```bash
+# Check all replicates
+for p in projects/blm_kras_rep*; do
+    echo "$(basename $p): $(qstat -u blz208818 | grep production | wc -l) jobs running"
+done
+```
+
 ### Validation matrix
 
 | Stage | BLM-cMYC (protein-DNA) | Protein-only | Protein-RNA | Protein-ligand | Membrane |
