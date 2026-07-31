@@ -1,4 +1,7 @@
 ; NVT equilibration
+; ⚠️ pcoupl must stay "no" — pressure coupling belongs in NPT, not NVT.
+; ⚠️ tc-grps and comm-grps MUST match the index groups (Protein_DNA,
+;    Water_Ions) created by gmx select.
 define                  = -DPOSRES
 integrator              = md
 nsteps                  = 50000

@@ -1,4 +1,10 @@
 ; NPT equilibration
+; ⚠️ DO NOT change pcoupl to Parrinello-Rahman here. During equilibration
+;    PR causes pressure instability and box collapse (system blows up).
+;    Berendsen is the gentle, stable barostat for equilibration.
+;    Production (md.mdp) uses Parrinello-Rahman instead.
+; ⚠️ tc-grps and comm-grps MUST match the index groups (Protein_DNA,
+;    Water_Ions) created by gmx select — a mismatch aborts grompp.
 define                  = -DPOSRES
 integrator              = md
 nsteps                  = 500000

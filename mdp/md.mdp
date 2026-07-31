@@ -1,4 +1,12 @@
 ; Production MD
+; ⚠️ DO NOT change pcoupl to Berendsen — production needs Parrinello-Rahman
+;    for the correct isothermal-isobaric ensemble.
+; ⚠️ DO NOT add mts=yes — it conflicts with -bonded gpu ("Cannot run with
+;    multiple time stepping") and provides no benefit with -update gpu.
+; ⚠️ nsteps=-1 is required — mdrun uses -maxh to stop each chunk, then
+;    resumes from checkpoint via -cpi -append.
+; ⚠️ tc-grps and comm-grps MUST match the index groups (Protein_DNA,
+;    Water_Ions) created by gmx select.
 integrator              = md
 dt                      = 0.002
 nstxout-compressed      = 25000

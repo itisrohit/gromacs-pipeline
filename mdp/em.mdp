@@ -1,4 +1,6 @@
 ; Energy minimization
+; ⚠️ grompp runs with -maxwarn 0 here — no warnings tolerated. If EM grompp
+;    aborts on a warning, fix the topology/MDP rather than raising maxwarn.
 integrator              = steep
 emtol                   = 1000.0
 emstep                  = 0.01
