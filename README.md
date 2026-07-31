@@ -336,16 +336,26 @@ Validation succeeds only if `forcefield.itp` exists inside the directory.
 
 ## Production with replicates
 
-For multiple replicates, create separate project directories:
+Prepare ONE template project, then clone it into independent replicates:
 
 ```bash
-bash gromacs-pipeline/setup/init.sh projects/blm_kras_rep1
-bash gromacs-pipeline/setup/init.sh projects/blm_kras_rep2
-bash gromacs-pipeline/setup/init.sh projects/blm_kras_rep3
+# Prepare a template project fully (structure, config, force field)
+# then create 3 replicates:
+bash gromacs-pipeline/setup/replicate.sh projects/blm_cmyc blm_kras 3
+# → projects/blm_kras_rep1, _rep2, _rep3
+
+# Submit all in parallel (they run on different GPU nodes):
+for p in projects/blm_kras_rep*; do
+  bash gromacs-pipeline/run.sh submit "$p" &
+done
+wait
 ```
 
-Each is independent. Set `PRODUCTION_NS=500` and `CHUNK_NS=50` in each, then
-submit all three. They run in parallel; each chunks production sequentially.
+`setup/replicate.sh` copies the template (config, input, mdp, prep), sets a
+unique `PROJECT` name per replicate, and reinitializes state/fingerprint so
+each is fully independent. Set `PRODUCTION_NS=500` and `CHUNK_NS=50` in the
+template first — each replicate then chains production chunks sequentially
+while the 3 replicates run in parallel.
 
 ---
 
