@@ -5,7 +5,19 @@ Built around standard GROMACS capabilities — no Python, no workflow engines, n
 
 ---
 
-## Architecture: why 3 jobs?
+## AI-Assisted Repository
+
+This repository is designed for AI-assisted operation, inspired by Max Iskiev's approach to AI-augmented scientific computing.
+
+- AI assists with repository operations, validation, reasoning, documentation, and scientific workflows.
+- The repository is designed so AI agents can reliably understand and operate it.
+- AI reuses existing repository capabilities rather than inventing new workflows.
+- Operational knowledge is maintained in dedicated skills rather than duplicated throughout the repository.
+- The repository remains deterministic, reproducible, and script-first.
+
+---
+
+## Architecture: Why 3 Jobs?
 
 The pipeline submits **3 PBS jobs** chained with dependencies:
 
@@ -28,7 +40,7 @@ job resumes from the last checkpoint. No need for even division of
 
 ---
 
-## Repository layout
+## Repository Layout
 
 ```
 gromacs-pipeline/
@@ -75,12 +87,13 @@ gromacs-pipeline/
 
 ---
 
-## Quick start
+## Quick Start
 
-> **Where**: steps 1-2 are **LOCAL** (your Mac). Steps 3-5 are **ON THE HPC**.
+> **Where**: Steps 1–2 are **LOCAL** (your Mac). Steps 3–5 are **ON THE HPC**.
 
 ```bash
-# ── RUN LOCALLY (on your Mac) ──
+# ── RUN LOCALLY (on your Mac) ──────────────────────────────────────────────
+
 # 1. Create a project
 bash setup/init.sh projects/my_system
 
@@ -90,7 +103,8 @@ bash projects/my_system/prep/prepare.sh            # → input/system.pdb
 
 # 3. Upload the project to the HPC (see "Deploy to the HPC" below)
 
-# ── RUN ON THE HPC ──
+# ── RUN ON THE HPC ─────────────────────────────────────────────────────────
+
 # 4. Install a force field (one-time)
 bash gromacs-pipeline/forcefields/get-ff.sh install amber99sb-ildn
 
@@ -103,7 +117,7 @@ Monitor with `bash gromacs-pipeline/run.sh status projects/my_system` (on HPC).
 
 ---
 
-## Deploy to the HPC (from your local machine)
+## Deploy to the HPC
 
 > **RUN LOCALLY** — uploads your local code/input to the HPC.
 
@@ -124,7 +138,7 @@ scp -r ./* <user>@<hpc-host>:~/simulations/gromacs-pipeline/
 scp -r projects/blm_cmyc <user>@<hpc-host>:~/simulations/projects/
 ```
 
-### Notes
+### Upload notes
 
 - **`scp -r` merges/overwrites** — fine for source files (config, mdp, lib),
   but it will NOT delete files on the HPC that you removed locally.
@@ -140,9 +154,9 @@ scp -r projects/blm_cmyc <user>@<hpc-host>:~/simulations/projects/
 
 ---
 
-## Full workflow
+## Full Workflow
 
-### 1. Create a project
+### Step 1: Create a project
 
 > **RUN LOCALLY** — creates the project folder structure on your Mac.
 
@@ -151,6 +165,7 @@ bash setup/init.sh projects/blm_cmyc
 ```
 
 This creates:
+
 ```
 projects/<name>/
 ├── config.sh        # edit this
@@ -162,7 +177,7 @@ projects/<name>/
 └── scripts/         # generated job scripts (created on submit)
 ```
 
-### 2. Prepare the structure
+### Step 2: Prepare the structure
 
 > **RUN LOCALLY** — pure text processing, no GROMACS/HPC needed.
 
@@ -183,7 +198,7 @@ bash projects/blm_cmyc/prep/prepare.sh
 The pipeline only strips water. Everything else (topology, box, solvation, ions,
 hydrogens) is GROMACS.
 
-### 3. Install a force field
+### Step 3: Install a force field
 
 > **RUN ON THE HPC** — `get-ff.sh install` copies from the HPC's system GROMACS.
 > (`list`/`doctor` work anywhere; `complete` needs the system install.)
@@ -209,7 +224,7 @@ Force fields are stored in `gromacs-pipeline/forcefields/`. The pipeline sets
 `GMXLIB` to this directory (plus the system GROMACS library) so custom force
 fields are found automatically.
 
-### 4. Edit config.sh
+### Step 4: Edit config.sh
 
 > **RUN LOCALLY** — edit the file on your Mac, then upload it with the project.
 
@@ -236,7 +251,7 @@ PROD_CPUS=8
 PROD_GPUS=1
 ```
 
-### 5. Validate
+### Step 5: Validate
 
 > **RUN ON THE HPC** — needs the cluster profile and (ideally) GROMACS present.
 
@@ -245,6 +260,7 @@ bash gromacs-pipeline/setup/validate.sh projects/my_system
 ```
 
 Checks:
+
 - config.sh is loadable and complete
 - FORCEFIELD exists in any search path (project / pipeline / GMXLIB / system)
 - Cluster profile exists
@@ -252,7 +268,7 @@ Checks:
 - Numeric parameters and walltimes are valid
 - Fails fast with clear errors — no GROMACS run needed
 
-### 6. Submit
+### Step 6: Submit
 
 > **RUN ON THE HPC** — submits PBS jobs to the cluster.
 
@@ -261,11 +277,12 @@ bash gromacs-pipeline/run.sh submit projects/my_system
 ```
 
 This:
+
 1. Verifies the fingerprint (config unchanged since init)
 2. Generates `scripts/setup.sh`, `scripts/equilibration.sh`, `scripts/production.sh`
 3. Submits all 3 PBS jobs with `afterok` dependencies
 
-### 7. Monitor
+### Step 7: Monitor
 
 > **RUN ON THE HPC** — reads job state from the cluster.
 
@@ -273,7 +290,7 @@ This:
 bash gromacs-pipeline/run.sh status projects/my_system
 ```
 
-### 8. Report
+### Step 8: Report
 
 > **RUN ON THE HPC** — reads simulation outputs.
 
@@ -283,7 +300,7 @@ bash gromacs-pipeline/run.sh report projects/my_system
 
 ---
 
-## Resume vs restart
+## Resume vs Restart
 
 > **RUN ON THE HPC** — re-submitting, deleting outputs, and state re-init
 > all happen on the HPC.
@@ -327,7 +344,7 @@ bash gromacs-pipeline/run.sh submit projects/my_system
 
 ---
 
-## Command reference
+## Command Reference
 
 ### Where to run what
 
@@ -372,7 +389,7 @@ bash gromacs-pipeline/run.sh submit projects/my_system
 
 ---
 
-## What each stage does
+## What Each Stage Does
 
 | Stage | GROMACS tool | Input → Output |
 |-------|-------------|----------------|
@@ -389,9 +406,10 @@ bash gromacs-pipeline/run.sh submit projects/my_system
 
 ---
 
-## Force field discovery
+## Force Field Discovery
 
 GROMACS searches for `<forcefield>.ff` in:
+
 1. Current directory (first)
 2. `GMXLIB` environment variable
 3. GROMACS install tree
@@ -408,7 +426,7 @@ Validation succeeds only if `forcefield.itp` exists inside the directory.
 
 ---
 
-## Production with replicates
+## Production with Replicates
 
 > **RUN ON THE HPC** — creates independent replicate projects from a local
 > template, then submits them all in parallel.
@@ -453,7 +471,7 @@ Uses `tests/bin/fake_gmx` to simulate GROMACS without a GPU.
 
 ---
 
-## Trajectory preparation
+## Trajectory Preparation
 
 After production completes, prepare trajectories for visualization and analysis:
 
@@ -494,7 +512,7 @@ All outputs go to `output/prepared/` (raw production files are never modified):
 
 ---
 
-## Scientific analysis
+## Scientific Analysis
 
 After trajectory preparation, use GROMACS tools for quality control and analysis. The MD Scientific Reasoning skill can orchestrate these analyses, interpret results, and answer scientific questions.
 
@@ -585,6 +603,7 @@ echo "Protein DNA" | gmx_mpi distance -s output/production/md.tpr -f output/prep
 ### Where logs go
 
 PBS output goes to `projects/<name>/*.o<jobid>` (in the project root). Stage-level logs:
+
 - `output/setup/*.log`
 - `output/equilibration/*.log`
 - `output/production/*.log`
