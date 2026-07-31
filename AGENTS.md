@@ -26,7 +26,7 @@ known pitfalls, and how to get an end-to-end run working.
 
 ## CURRENT STATUS — READ THIS FIRST (as of the last session)
 
-**Phase**: Production chunking IMPLEMENTED + convert-tpr/mv VALIDATED on HPC. Walltime-interruption resume not yet tested. Benchmark complete. Ready for 500ns × 3 runs after profile fix + resume validation.
+**Phase**: Production submitted on BLM-cMYC with optimizations (nstlist=100, vbt=0.005). Waiting for A100 node.
 
 ### Recent fixes (committed)
 1. **TPR filename mismatch** (`df3012e`): `convert-tpr -o md.tpr.tmp` created `md.tpr.tmp.tpr` (GROMACS appends `.tpr`). Fixed to use `md.tpr.tmp.tpr` consistently. Validated on HPC with real GROMACS.
@@ -67,28 +67,17 @@ See `~/simulations/bench/benchmark_summary.log` on HPC.
 ### HPC validation status (BLM-cMYC 1ns)
 - Setup ✅, EM ✅, NVT ✅, NPT ✅ (Berendsen)
 - Production: extend-from-checkpoint loop validated on HPC (convert-tpr + mv + checkpoint cycle works)
-- **Production walltime-interruption validation: NOT YET DONE** — submit with PROD_WALLTIME=00:05:00, verify resume
-- `output/production/` was cleaned; production dir has only `md.tpr` from successful grompp
-- Profile currently has `centos=icelake` removed (was blocking on no A100 nodes)
+- **Production submitted**: Job 968472.pbshpc, walltime=5min, waiting for A100 node
+- **Production walltime-interruption validation: IN PROGRESS** — job submitted, waiting to run
+- MDP updated: nstlist=100, vbt=0.005
+- Profile restored: `centos=icelake` added back to SELECT_GPU
 
 ### Immediate next actions
-1. **Restore `centos=icelake` in profile** before 500ns runs.
+1. **Check if job 968472 ran** — verify checkpoint, resume, completion.
 2. **Re-run combined benchmark** with `export OMP_NUM_THREADS=8`.
-3. **Run production walltime-interruption validation** on HPC.
-4. **Apply nstlist=100 + vbt=0.005 to default MDPs** after benchmark confirmation.
-5. **Apply C-rescale to production MDP** after validation (replace Berendsen for correct ensemble).
-6. **Configure BLM-KRAS_K 500ns × 3 replicates** via `setup/replicate.sh`.
-
-### HPC profile gotcha (DO NOT REPEAT)
-- `SELECT_GPU` currently has NO `centos=icelake` constraint (removed to unblock GPU access when A100s were busy).
-- **Restore it before running 500ns production**: `sed -i 's|ngpus=%GPUS%"|ngpus=%GPUS%:centos=icelake"|' profiles/iitd.sh`
-- PBS uses `-P` for project, not `-A`. Profile has `SUBMIT_ACCOUNT="-P %ACCOUNT%"`.
-- `qdel -f` is invalid on IITD PBS. Use `qdel` without flags.
-- A100 nodes (`aice*`) are often busy. V100 (`vsky*`) available. Job requests `centos=icelake` for A100.
-- To submit without A100 constraint: remove `centos=icelake` from SELECT_GPU temporarily.
-- Benchmark jobs run on A100 (~43 ns/day). V100 runs at ~20 ns/day.
-- `expect` chokes on `{}`, `[0-9]`, `$` in SSH commands. Upload `.sh` scripts instead of inline commands.
-- **Benchmark threading**: Always `export OMP_NUM_THREADS=8` before benchmark mdrun calls. Without it, subsequent runs in the same script may default to 1 thread.
+3. **Apply nstlist=100 + vbt=0.005 to default MDPs** after benchmark confirmation.
+4. **Apply C-rescale to production MDP** after validation (replace Berendsen for correct ensemble).
+5. **Configure BLM-KRAS_K 500ns × 3 replicates** via `setup/replicate.sh`.
 
 ---
 
