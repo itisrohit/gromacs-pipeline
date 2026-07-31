@@ -494,9 +494,9 @@ All outputs go to `output/prepared/` (raw production files are never modified):
 
 ---
 
-## Post-production analysis
+## Scientific analysis
 
-After trajectory preparation, use GROMACS tools for quality control and analysis. The post-production skill can orchestrate these analyses and interpret results.
+After trajectory preparation, use GROMACS tools for quality control and analysis. The MD Scientific Reasoning skill can orchestrate these analyses, interpret results, and answer scientific questions.
 
 ### Energy stability
 

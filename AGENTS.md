@@ -448,23 +448,21 @@ Skills live in `.agent/skills/` and provide structured guidance for specific tas
 
 **Scripts this skill never executes:** `run.sh submit`, `lib/stages.sh`, `lib/gmx.sh`, `lib/scheduler.sh`
 
-### post-production
+### md-scientific-reasoning
 
-**Purpose:** Verifies simulation health, orchestrates analyses, interprets results, and produces quality assessments after production completes.
+**Purpose:** Scientific reasoning system for molecular dynamics. Answers scientific questions by reasoning about evidence, not by executing analyses. Analyses are evidence producers.
 
-**Activates when:** Production is complete, QC is requested, or simulation convergence is questioned.
+**Activates when:** User asks scientific questions about MD results, simulation outputs, convergence, stability, flexibility, binding, mutation effects, or structural interpretation.
 
 **Files:**
 
 | File | Responsibility |
 |------|---------------|
 | `SKILL.md` | Entry point: purpose, activation, responsibilities, principles, evidence hierarchy |
-| `workflow.md` | How the agent thinks through post-production tasks (11-step reasoning) |
-| `playbook.md` | Operational knowledge: repository interaction principles, analysis procedures, interpretation |
+| `workflow.md` | How the agent reasons about scientific questions (12-step reasoning) |
+| `playbook.md` | Evidence producers and evidence synthesis patterns |
 
-**Analyses supported:** Energy stability, RMSD, RMSF, radius of gyration, hydrogen bonds, DSSP, COM distance
-
-**Key principles:** Repository-first, evidence-first, verified knowledge, no guessing
+**Key principles:** Evidence-first, hypothesis-driven, minimum sufficient evidence, verified knowledge, no guessing
 
 **Scripts this skill never executes:** `run.sh submit`, `lib/stages.sh`, `lib/gmx.sh`, `lib/scheduler.sh`
 
