@@ -320,6 +320,129 @@ Gotchas:
 
 ---
 
+## Operational commands (tested patterns)
+
+All commands below have been tested on IITD HPC. Use them as-is.
+
+### SSH pattern (from local machine)
+
+```bash
+expect << 'EOF'
+set timeout 60
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    <user>@<hpc-host> "COMMANDS..."
+expect "password:"
+send "<password>\r"
+expect eof
+EOF
+```
+
+### Upload script to HPC
+
+```bash
+expect << 'EOF'
+set timeout 60
+spawn scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    /local/path/script.sh <user>@<hpc-host>:~/simulations/
+expect "password:"
+send "<password>\r"
+expect eof
+EOF
+```
+
+### Run script on HPC
+
+```bash
+expect << 'EOF'
+set timeout 120
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    <user>@<hpc-host> "bash ~/simulations/script.sh 2>&1; echo EXIT=\$?"
+expect "password:"
+send "<password>\r"
+expect "EXIT="
+expect eof
+EOF
+```
+
+### Check job status
+
+```bash
+expect << 'EOF'
+set timeout 60
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    <user>@<hpc-host> "qstat -u <user>; echo '---'; cat ~/simulations/projects/<name>/.state/workflow.json"
+expect "password:"
+send "<password>\r"
+expect eof
+EOF
+```
+
+### Check production output
+
+```bash
+expect << 'EOF'
+set timeout 60
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    <user>@<hpc-host> "ls -la ~/simulations/projects/<name>/output/production/; echo '---'; cat ~/simulations/projects/<name>/output/production/md.cpt 2>/dev/null | head -3 || echo 'no checkpoint'"
+expect "password:"
+send "<password>\r"
+expect eof
+EOF
+```
+
+### Submit production (with --force)
+
+```bash
+expect << 'EOF'
+set timeout 120
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    <user>@<hpc-host> "cd ~/simulations && bash gromacs-pipeline/run.sh submit --force projects/<name> 2>&1; echo EXIT=\$?"
+expect "password:"
+send "<password>\r"
+expect "EXIT="
+expect eof
+EOF
+```
+
+### Update config on HPC
+
+```bash
+expect << 'EOF'
+set timeout 60
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    <user>@<hpc-host> "cd ~/simulations/projects/<name> && sed -i 's/^PRODUCTION_NS=.*/PRODUCTION_NS=0.5/' config.sh && grep PRODUCTION_NS config.sh"
+expect "password:"
+send "<password>\r"
+expect eof
+EOF
+```
+
+### Reset workflow state
+
+```bash
+expect << 'EOF'
+set timeout 60
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    <user>@<hpc-host> "cd ~/simulations/projects/<name> && cat > .state/workflow.json << 'STATE'
+{
+  \"schema_version\": 1,
+  \"project\": \"<project_name>\",
+  \"initialized\": \"<timestamp>\",
+  \"phases\": {
+    \"setup\": {\"status\": \"completed\", \"job_id\": \"\"},
+    \"equilibration\": {\"status\": \"completed\", \"job_id\": \"\"},
+    \"production\": {\"status\": \"pending\", \"job_id\": \"\"}
+  }
+}
+STATE
+cat .state/workflow.json"
+expect "password:"
+send "<password>\r"
+expect eof
+EOF
+
+---
+
 ## The 3-job pipeline (why)
 
 ```
