@@ -139,20 +139,11 @@ run_stage_index() {
 
     echo "INDEX: Creating temperature coupling groups..."
 
-    # Determine current maximum group number by listing defaults
-    local group_info last_group g1 g2
-    group_info=$(echo q | $GMX make_ndx -f output/setup/ions.gro -o /dev/null 2>&1)
-    last_group=$(echo "$group_info" | grep -E '^ *[0-9]+ ' | tail -1 | awk '{print $1}')
-    g1=$((last_group + 1))
-    g2=$((last_group + 2))
-
-    echo "INDEX: Using group numbers $g1 (solute) and $g2 (solvent)"
-
     $GMX make_ndx -f output/setup/ions.gro -o "$out" <<- EOF
 ! "Water" & ! "Ion"
-name $g1 Protein_DNA
+name 19 Protein_DNA
 "Water" | "Ion"
-name $g2 Water_Ions
+name 20 Water_Ions
 q
 EOF
 
@@ -162,7 +153,7 @@ EOF
     fi
 
     if ! grep -q "Protein_DNA" "$out" 2>/dev/null; then
-        echo "WARNING: Protein_DNA group not created. System may be protein-only."
+        echo "WARNING: Protein_DNA group not created"
     fi
     echo "INDEX: Complete"
 }
