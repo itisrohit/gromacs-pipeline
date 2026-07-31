@@ -6,6 +6,23 @@ debug, and validate it. Read this first if you lost context.
 
 ---
 
+## Repository Philosophy
+
+This repository follows a script-first, AI-assisted design inspired by Max Iskiev's approach to AI-assisted software development.
+
+Core principles:
+
+- The repository is the primary source of truth. Reuse existing repository capabilities before creating new ones.
+- Prefer deterministic, reproducible Bash workflows over hidden automation.
+- AI assists with reasoning, validation, documentation, and orchestration, but should not invent repository behaviour.
+- Commands, workflows, and operational procedures must be verified before execution rather than generated from memory.
+- Operational knowledge belongs in dedicated AI skills. The repository implements workflows; the skills explain how to reason about them.
+- Preserve reproducibility, portability, and resumability across all changes.
+- When extending the repository, prefer improving existing workflows over introducing new scripts or duplicate functionality.
+- AGENTS.md captures institutional knowledge and development practices. README.md is for end users. Skills capture structured operational reasoning.
+
+---
+
 ## Project purpose (the final aim)
 
 Build a **generic, reusable, Bash-only GROMACS MD pipeline** that:
