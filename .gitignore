@@ -1,0 +1,44 @@
+# Force fields — installed via get-ff.sh, not tracked in git
+forcefields/*.ff/
+forcefields/*.ff
+!forcefields/get-ff.sh
+._*
+
+# Simulation output (generated on HPC)
+projects/
+output/
+*.log
+*.edr
+*.xtc
+*.cpt
+*.tpr
+*.gro
+*.trr
+
+# Lock files
+*.lock
+*.lock.flock
+.production.lock/
+
+# Temporary files
+*.tmp
+*.tmp.*
+*~
+*.swp
+*.swo
+
+# State files (project-specific)
+.state/
+
+# PBS/SLURM job logs
+*.o[0-9]*
+*.e[0-9]*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.sublime-*
