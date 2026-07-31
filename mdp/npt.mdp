@@ -7,6 +7,7 @@ nstxout-compressed      = 5000
 nstenergy               = 5000
 nstlog                  = 5000
 nstcalcenergy           = 500
+nstcomm                 = 500
 continuation            = yes
 constraint_algorithm    = lincs
 constraints             = h-bonds
