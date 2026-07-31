@@ -177,11 +177,81 @@ The deterministic checks listed in "Checks performed" under `setup/validate.sh` 
 
 The following require domain reasoning that `validate.sh` cannot perform:
 
-#### PDB Quality
+#### PDB Structural Validation
 
-- **ATOM/HETATM records present**: Corrupt PDB crashes pdb2gmx
-- **AltLoc column clean**: Column 22 with A/B causes chain-type errors (Bug #9 in AGENTS.md)
-- **Residue names standard**: Unknown residues crash pdb2gmx
+The following checks detect problems that cause pdb2gmx failures. Read the PDB and apply each check.
+
+**Record integrity:**
+- ATOM/HETATM records present — corrupt PDB crashes pdb2gmx
+- No binary garbage or truncated lines — PDB lines should be ≤ 80 characters
+
+**Chain IDs:**
+- All ATOM records have a chain ID (column 22, character 21)
+- No mixed empty/filled chain IDs (e.g., some residues chain A, others blank)
+- No duplicate chain IDs for different polymer chains
+- DNA chains use consistent naming (A/B vs 1/2 — pick one convention)
+
+**Residue numbering:**
+- No duplicate residue numbers within the same chain (seqid in columns 23-26)
+- Insertion codes (column 27, letters after residue number) detected and reported — pdb2gmx handles them but topology may be unexpected
+- Residue numbers are sequential (gaps > 10 indicate missing residues or numbering errors)
+
+**Atom naming:**
+- No duplicate atom names within the same residue (e.g., two "CA" atoms in one residue)
+- Atom names follow PDB convention (columns 13-16, left-justified for elements)
+- No atoms with empty names
+
+**Alternate locations:**
+- Column 22 (altLoc) must be empty or contain single conformations
+- A/B alternates cause chain-type errors (Bug #9 in AGENTS.md)
+- If altLoc present, report which residues have alternates and advise the user to resolve them (keep highest occupancy or merge)
+
+**Backbone integrity:**
+- Consecutive Cα atoms (protein) should be 3.2-3.8 Å apart
+- Gaps > 5 Å between consecutive residues indicate broken backbone or missing residues
+- Report any suspicious gaps with residue numbers
+
+**Unsupported residues:**
+- HETATM residues that are not standard amino acids, nucleic acids, water, or common ions (ZN, CA, MG, NA, K, CL, FE, CU, MN, CO, etc.)
+- Report unrecognized residue names — these require custom topology files
+
+**Hydrogen completeness:**
+- If PDB has no hydrogen records (HYDROGEN/DUM), pdb2gmx with `-ignh` will add them — this is fine
+- If PDB has partial hydrogen records, note this (pdb2gmx will regenerate them)
+
+#### Ligand & Custom Topology Validation
+
+When HETATM residues are detected in the PDB, classify them and validate topology readiness.
+
+**Residue classification:**
+- Water: HOH, SOL, WAT, TIP3, SPC — ignored by run_stage_prepare (stripped)
+- Structural ions: ZN, CA, MG, NA, K, CL, FE, CU, MN, CO, etc. — must be in FF residuetypes.dat
+- Ligands: any other HETATM residue — requires custom topology
+- Unknown: unrecognized residue names — requires investigation
+
+**Validation steps:**
+1. List all unique HETATM residue names from PDB
+2. Classify each as water / ion / ligand / unknown
+3. For ions: verify the ion name exists in the FF's `residuetypes.dat`
+4. For ligands: check if `EXTRA_ITPS` in config.sh references the required topology files
+5. For ligands: verify each referenced `.itp` file exists at the specified path
+6. For unknowns: report the residue name and advise the user to investigate
+
+**EXTRA_ITPS validation:**
+- If `EXTRA_ITPS` is set, split by spaces and verify each file exists
+- If HETATM residues exist but `EXTRA_ITPS` is empty, warn that custom topologies may be needed
+- If `EXTRA_ITPS` references files that don't exist, report error
+
+**What the skill cannot do:**
+- Generate topologies (requires ACPype, GAFF, antechamber, or manual parameterization)
+- Validate topology correctness (requires running pdb2gmx)
+- Determine partial charges or force field parameters
+
+**Manual work the user must do for ligands:**
+1. Generate topology: `antechamber -i ligand.mol2 -fi mol2 -o ligand.mol2 -fo mol2 -c bcc`
+2. Or use ACPype: `acpype -i ligand.mol2 -a gaff2 -c bcc`
+3. Place resulting `.itp` file in project and reference in `EXTRA_ITPS`
+4. Add ligand to index file if needed
 
 #### Force Field Compatibility
 
@@ -198,12 +268,90 @@ The following require domain reasoning that `validate.sh` cannot perform:
 - **md.mdp: nsteps = -1**: Required for checkpoint-based chunking. Finite nsteps breaks the extend-from-checkpoint loop.
 - **nstcomm matches nstcalcenergy**: Mismatch causes extra GPU-CPU synchronization (Bug #11).
 
-#### Resource Adequacy
+#### Resource Estimation
 
-- **PROD_MEM for system size**: ~0.02 GB per 1000 atoms on GPU. 700k atoms needs ~14GB.
-- **CHUNK_NS fits in PROD_WALLTIME**: Estimate ns/day from benchmarks, verify chunk completes within walltime.
-- **EQ_WALLTIME fits EM+NVT+NPT**: EM ~5-10 min, NVT 100 ps ~8 min, NPT 1 ns ~70 min (V100). Total ~90 min.
-- **SETUP_WALLTIME adequate**: Setup ~2-3 min for typical systems. Large systems may need more.
+Estimate resource requirements from actual project inputs. All values are approximations.
+
+**Atom count estimation:**
+- Count ATOM/HETATM records in PDB (excluding water)
+- Protein: ~15 atoms per residue (average)
+- DNA/RNA: ~33 atoms per nucleotide
+- Water: added by solvate, estimated from box volume
+- Ions: ~1 per 50-100 water molecules (depending on SALT_CONC)
+
+**Solvent size estimation:**
+- Box volume ≈ (2 × protein_radius + 2 × BOX_DISTANCE)³ for cubic
+- Dodecahedron: ~0.77 × cubic volume (23% fewer water molecules)
+- Water density: ~55.5 mol/L = 3.34 × 10²⁸ molecules/m³
+- Approximate water count: box_volume_nm³ × 33.4 (water molecules per nm³)
+
+**Total atom count:**
+- protein_atoms + water_atoms + ions_atoms
+- Rule of thumb: solvated system is typically 3-10× the solute atom count
+
+**Memory estimation (GPU):**
+- PROD_MEM ≥ 0.02 GB per 1000 solvated atoms
+- Example: 500k atoms → 10 GB minimum, recommend 16 GB
+- EQ_MEM similar to PROD_MEM
+- SETUP_MEM: 2-4 GB typically sufficient (CPU-only)
+
+**Trajectory size estimation:**
+- nstxout-compressed = 25000 with dt = 0.002 → 1 frame per 50 ps
+- Total frames = PRODUCTION_NS × 1000 / 50 = PRODUCTION_NS × 20
+- Frame size: atom_count × 3 coordinates × 4 bytes × ~0.5 compression ≈ atom_count × 6 bytes
+- Total trajectory: frames × frame_size
+- Example: 500k atoms, 100 ns → 2000 frames × 3 MB/frame = 600 MB
+
+**Checkpoint storage:**
+- Checkpoint size ≈ atom_count × 100 bytes (coordinates + velocities + forces)
+- Example: 500k atoms → ~50 MB per checkpoint
+- One checkpoint per chunk, one chunk per PROD_WALLTIME
+
+**Disk usage estimation:**
+- Trajectory: calculated above
+- Checkpoints: 50 MB × chunks
+- Logs: ~100 KB per ns
+- Total: trajectory + checkpoints + 10% margin
+
+**Runtime estimation (production):**
+- From benchmark data: ns/day for the system size
+- Interpolate from AGENTS.md benchmarks (39-43 ns/day for 75k atoms on A100)
+- Scale: runtime ∝ atom_count^1.5 (approximate)
+- Total production time = PRODUCTION_NS / ns_per_day
+
+**CHUNK_NS validation:**
+- Estimate ns/day from benchmarks and system size
+- Calculate: chunk_runtime_hours = CHUNK_NS × 24 / ns_per_day
+- Verify: chunk_runtime_hours < PROD_WALLTIME (convert to hours)
+- If chunk exceeds walltime, the loop will hit walltime before reaching target — reduce CHUNK_NS
+
+#### Project State Validation
+
+Before submission, verify the project state is internally consistent.
+
+**State file checks:**
+- `.state/workflow.json` exists and is valid JSON
+- `.state/fingerprint` exists and is non-empty
+
+**State vs output consistency:**
+- If phase status is "completed" but sentinel file is missing → state is stale, needs reset
+- If phase status is "running" but no job ID → state is corrupted
+- If phase status is "running" but output exists → mark completed
+- Sentinel files: setup → `output/setup/ions.gro`, equilibration → `output/equilibration/npt.gro`, production → `output/production/PRODUCTION_COMPLETE`
+
+**Fingerprint consistency:**
+- Compute current fingerprint via `setup/fingerprint.sh --check`
+- Compare with stored fingerprint in `.state/fingerprint`
+- If mismatch: config/profile/MDP/PDB changed since initialization — user must reinitialize or use `--force`
+
+**Stale state detection:**
+- If `.state/workflow.json` says "running" for any phase but no corresponding job log exists in `output/logs/` → state is stale
+- Advise user to reset state before submission
+
+**Partial completion:**
+- If setup completed but equilibration not started → normal (ready for equilibration)
+- If equilibration completed but production not started → normal (ready for production)
+- If production partially completed (checkpoint exists but no PRODUCTION_COMPLETE) → resumable
 
 ---
 
@@ -237,6 +385,129 @@ Always verify the FF has dna.rtp/rna.rtp if the PDB contains nucleic acids.
 | 200-500k atoms | 8 | 1 | 16GB | 2h | 24h |
 | 500k-1M atoms | 8 | 1 | 32GB | 3h | 24h |
 | > 1M atoms | 16 | 1-2 | 64GB | 4h | 24h |
+
+---
+
+## Scientific Readiness Review
+
+Before allowing submission, perform a final scientific review. Flag anything suspicious with reasoning.
+
+**Box assessment:**
+- BOX_DISTANCE < 0.8 nm: risky — solute interacts with periodic images, causing pressure instability
+- BOX_DISTANCE > 1.5 nm: wasteful — excessive water molecules slow the simulation
+- BOX_DISTANCE = 1.0 nm: standard, no action needed
+- Box type dodecahedron: optimal for roughly spherical solutes
+- Box type cubic: simpler but uses ~23% more water — only needed for anisotropic systems or NMR restraints
+
+**Production length assessment:**
+- < 50 ns: very short — suitable only for fast local motions (side-chain rotation, loop fluctuations)
+- 50-100 ns: short — may be sufficient for well-folded proteins, insufficient for DNA-protein dynamics
+- 100-500 ns: standard — appropriate for most systems
+- 500-1000 ns: long — needed for large conformational changes, binding/unbinding
+- > 1000 ns: very long — only with strong scientific justification
+- Flag if production length doesn't match typical range for the system type
+
+**MDP consistency review:**
+- dt = 0.002 with constraints = h-bonds: correct
+- dt = 0.004: requires hydrogen mass repartitioning — flag if not mentioned
+- nstxout-compressed = 25000 (50 ps): standard for most analyses
+- nstxout-compressed < 5000: dense trajectory — check if needed for the analysis
+- nstxout-compressed > 50000: sparse — may miss fast events
+
+**Output frequency assessment:**
+- nstenergy = 5000 (10 ps): standard for stability monitoring
+- nstlog = 5000 (10 ps): standard for diagnostics
+- If nstenergy or nstlog > 50000: may miss energy drift
+
+**Assumption check — flag these for the user:**
+- Temperature: 300 K (standard, but user may want different)
+- Pressure: 1 bar (standard, but user may want different)
+- Water model: spce (standard with Amber FFs, but user may need tip3p/tip4p)
+- Ensemble: NPT for production (standard, but some studies need NVT or NPT with different barostat)
+
+**Risk assessment:**
+- Risk level LOW: standard settings, no unusual choices
+- Risk level MEDIUM: non-standard settings that are still valid (e.g., long production, dense trajectory)
+- Risk level HIGH: settings likely to cause problems (BOX_DISTANCE < 0.8, insufficient memory, incompatible FF)
+- For HIGH risk: block submission until user acknowledges the risk
+- For MEDIUM risk: warn but allow submission
+
+---
+
+## Final Preparation Report
+
+After all validation and reasoning, produce a readiness report. This is the final output before submission.
+
+**Report format:**
+
+```
+═══════════════════════════════════════════════════════
+  INPUT PREPARATION REPORT — <project_name>
+═══════════════════════════════════════════════════════
+
+SYSTEM SUMMARY
+  Type:           protein / protein-DNA / protein-ligand
+  Chains:         <count> (<list>)
+  Residues:       <count>
+  Atoms (solute): <count>
+  Atoms (total):  <count> (estimated after solvation)
+
+CONFIGURATION
+  Force field:    <name> (<status: installed / not found>)
+  Water model:    <name>
+  Box type:       <type>
+  Box distance:   <distance> nm
+  Salt:           <concentration> M (<cation>/<anion>)
+
+SIMULATION LENGTH
+  Production:     <ns> ns
+  Chunk size:     <ns> ns
+  Total chunks:   <count> (estimated)
+
+RESOURCES
+  Setup:          <cpus> CPUs, <mem> memory, <walltime> walltime
+  Equilibration:  <cpus> CPUs, <gpus> GPUs, <mem> memory, <walltime> walltime
+  Production:     <cpus> CPUs, <gpus> GPUs, <mem> memory, <walltime> walltime
+
+ESTIMATES (approximate)
+  Trajectory size:   <size> GB
+  Checkpoint size:   <size> MB per chunk
+  Disk usage:        <size> GB total
+  Production time:   <hours> hours (<days> days)
+  ns/day:            <rate> (estimated from benchmarks)
+
+VALIDATION STATUS
+  ✅ / ❌ config.sh loads
+  ✅ / ❌ Required variables set
+  ✅ / ❌ Force field installed
+  ✅ / ❌ Cluster profile exists
+  ✅ / ❌ Input files valid
+  ✅ / ❌ PDB structural integrity
+  ✅ / ❌ FF compatibility
+  ✅ / ❌ MDP consistency
+  ✅ / ❌ Resource adequacy
+  ✅ / ❌ State consistency
+
+POTENTIAL RISKS
+  - <risk 1: explanation>
+  - <risk 2: explanation>
+
+RECOMMENDATIONS
+  - <recommendation 1: explanation>
+  - <recommendation 2: explanation>
+
+───────────────────────────────────────────────────────
+  DECISION: READY / NOT READY
+───────────────────────────────────────────────────────
+
+  If READY: run `bash gromacs-pipeline/run.sh submit <project>`
+  If NOT READY: address the issues above before submission.
+═══════════════════════════════════════════════════════
+```
+
+**Decision logic:**
+- READY: all validation checks pass, no HIGH risk items, user has confirmed recommendations
+- NOT READY: any validation check fails, or HIGH risk items not acknowledged
 
 ---
 
