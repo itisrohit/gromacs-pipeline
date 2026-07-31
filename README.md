@@ -209,6 +209,65 @@ bash gromacs-pipeline/run.sh report projects/my_system
 
 ---
 
+## Resume vs restart
+
+The pipeline is **idempotent** — every stage skips if its output already exists.
+This means you can re-run `run.sh submit` safely; it only submits what's incomplete.
+
+| Situation | What changed | Action |
+|-----------|-------------|--------|
+| **Resume** | Nothing, or only a bug fix in pipeline code / MDP | Just re-`submit` — completed stages are skipped, only incomplete ones re-run |
+| **Resume after walltime** | Production chunk hit walltime | Just re-`submit` — `mdrun -cpi` resumes from checkpoint automatically |
+| **Restart** | Force field, `system.pdb`, or `config.sh` changed | `rm -rf output` then re-init + submit (below) |
+| **Restart phase** | Only equilibration/production settings changed | Delete just that phase's dir then re-`submit` |
+
+### Resume (recommended for MDP/code fixes)
+
+```bash
+# Just re-submit. Completed stages skip, incomplete ones run.
+bash gromacs-pipeline/run.sh submit projects/my_system
+```
+
+Example: if NVT failed but setup is done, re-running `submit` skips setup
+(`ions.gro` exists) and only re-submits equilibration. If production hit
+walltime, `mdrun -cpi` continues from the checkpoint instead of step 0.
+
+### Restart from scratch (only when inputs changed)
+
+```bash
+# Force field / PDB / config changed → previous outputs are invalid
+rm -rf projects/my_system/output
+rm -rf projects/my_system/.state
+mkdir -p projects/my_system/output/setup \
+         projects/my_system/output/equilibration \
+         projects/my_system/output/production \
+         projects/my_system/output/logs
+bash gromacs-pipeline/setup/state.sh projects/my_system
+bash gromacs-pipeline/setup/fingerprint.sh projects/my_system
+bash gromacs-pipeline/run.sh submit projects/my_system
+```
+
+### Restart just equilibration or production
+
+```bash
+# If only equilibration needs a clean run:
+rm -rf projects/my_system/output/equilibration
+bash gromacs-pipeline/run.sh submit projects/my_system
+```
+
+```bash
+# If only production needs a clean run:
+rm -rf projects/my_system/output/production
+bash gromacs-pipeline/run.sh submit projects/my_system
+```
+
+### Golden rule
+
+- **Code / MDP fix** → resume (just re-`submit`)
+- **Force field / structure / config change** → restart (delete `output/`)
+
+---
+
 ## Command reference
 
 ### run.sh
