@@ -26,56 +26,58 @@ known pitfalls, and how to get an end-to-end run working.
 
 ## CURRENT STATUS — READ THIS FIRST (as of the last session)
 
-**Phase**: Production chunking IMPLEMENTED + benchmark COMPLETE. Awaiting HPC validation + MDP adoption.
+**Phase**: Production chunking IMPLEMENTED + convert-tpr/mv VALIDATED on HPC. Walltime-interruption resume not yet tested. Benchmark complete. Ready for 500ns × 3 runs after profile fix + resume validation.
 
-### Production chunking fix (IMPLEMENTED and DEPLOYED to HPC)
-The extend-from-checkpoint loop is implemented in `lib/stages.sh:run_stage_production()`.
-All local tests pass (20/20 unit, 15/16 integration). Deployed to HPC (`lib/gmx.sh`, `lib/stages.sh`, `run.sh`).
+### Recent fixes (committed)
+1. **TPR filename mismatch** (`df3012e`): `convert-tpr -o md.tpr.tmp` created `md.tpr.tmp.tpr` (GROMACS appends `.tpr`). Fixed to use `md.tpr.tmp.tpr` consistently. Validated on HPC with real GROMACS.
+2. **fake_gmx awk field index** (`1d1c37e`): `convert-tpr` writes `target = value` (3 fields), but mdrun awk read `$2` (`=`) instead of `$3` (value). Fixed. Integration tests: 17/18 pass.
+
+### Production chunking (IMPLEMENTED, DEPLOYED, VALIDATED)
+The extend-from-checkpoint loop is in `lib/stages.sh:run_stage_production()`.
+Local tests: 20/20 unit, 17/18 integration (1 pre-existing test logic issue — see Test 7 below).
 
 What changed:
 - `checkpoint_time_ps()` in `lib/gmx.sh` reads time via `gmx dump -cp` (primary) or `gmx check` (fallback)
 - `run_stage_production()` loops: read checkpoint → compute target → convert-tpr -until → mdrun -cpi → check progress
-- Atomic TPR replacement: `convert-tpr -o md.tpr.tmp` then `mv md.tpr.tmp md.tpr`
+- Atomic TPR replacement: `convert-tpr -o md.tpr.tmp.tpr` then `mv md.tpr.tmp.tpr md.tpr` (GROMACS appends `.tpr`)
+- Post-convert-tpr file existence validation (safety net beyond exit code)
 - Stale lock recovery: PID-based staleness check in mkdir fallback
 - `run.sh` submits ONE production job (no more N-chunk chain), marker-based completion
 - `-nsteps -1` REMOVED from mdrun (was overriding convert-tpr target)
 - All `$GMX` calls quoted for paths with spaces
 
-### Benchmark results (job 968167, COMPLETE on HPC A100)
+### Benchmark results (COMPLETE — jobs 968167 + 968361 on HPC A100)
 See `~/simulations/bench/benchmark_summary.log` on HPC.
 
-| Config | ns/day | hour/ns | LINCS |
-|--------|--------|---------|-------|
-| baseline (nst400/vbt002/nce500) | 39.259 | 0.611 | 0 |
-| nstlist=100 | 43.469 | 0.552 | 0 |
-| vbt=0.005 | 41.775 | 0.575 | 0 |
-| nstlist=40 | 39.661 | 0.605 | 0 |
-| nce=1000 | 39.181 | 0.613 | 0 |
-| Berendsen NPT | 39.678 | 0.605 | 0 |
-| C-rescale NPT | grompp FAILED | — | — |
+| Config | ns/day | hour/ns | LINCS | Notes |
+|--------|--------|---------|-------|-------|
+| baseline (nst400/vbt002/nce500) | 39.259 | 0.611 | 0 | |
+| nstlist=100 | 43.469 | 0.552 | 0 | **ADOPT** (+10.7%) |
+| vbt=0.005 | 41.775 | 0.575 | 0 | **ADOPT** (+6.4%) |
+| nstlist=40 | 39.661 | 0.605 | 0 | Negligible |
+| nce=1000 | 39.181 | 0.613 | 0 | Negligible |
+| Berendsen NPT | 39.678 | 0.605 | 0 | Keep for equilibration |
+| C-rescale NPT | 28.196 | 0.851 | 0 | Ran with 1 thread (see below) |
+| combined nst100+vbt005 | 25.921 | 0.926 | 0 | Ran with 1 thread (see below) |
 
-**C-rescale failure**: benchmark MDP typo — duplicate `pcoupl` line + missing `pcoupltype = isotropic`.
-NOT a GROMACS version issue. Fixed MDP uploaded to HPC (`bench/mdp_npt_crescale_fixed.mdp`).
+**Combined + C-rescale results are INVALID** — both ran on `aice005` with 1 OpenMP thread instead of 8. The benchmark script does not set `OMP_NUM_THREADS`. The first run (nst100) inherited 8 threads from the environment; subsequent runs did not. Re-run needed with `export OMP_NUM_THREADS=8`.
 
-**Combined nstlist=100+vbt=0.005 benchmark**: MDP uploaded (`bench/mdp_combined100_005.mdp`).
-Job 968312 submitted, running now. Awaiting results.
-
-**Recommendation so far**: nstlist=100 + vbt=0.005 (estimated ~17% speedup). Need combined benchmark to confirm additive.
+**Recommendation**: nstlist=100 + vbt=0.005. Re-run combined benchmark with correct threading to confirm.
 
 ### HPC validation status (BLM-cMYC 1ns)
 - Setup ✅, EM ✅, NVT ✅, NPT ✅ (Berendsen)
-- Production: job 967992 over-ran (old bug, killed). New code deployed.
-- **Production walltime-interruption validation: NOT YET DONE**
-- All recent production jobs (968267–968291) failed at startup (qdel'd during debugging, no GPU nodes, module issues).
-- `output/production/` has stale `md.tpr` and `md.tpr.tmp.tpr` from failed attempts. No checkpoint. No marker.
-- Profile currently has `centos=icelake` removed (was blocking on no A100 nodes). Restore before 500ns runs.
+- Production: extend-from-checkpoint loop validated on HPC (convert-tpr + mv + checkpoint cycle works)
+- **Production walltime-interruption validation: NOT YET DONE** — submit with PROD_WALLTIME=00:05:00, verify resume
+- `output/production/` was cleaned; production dir has only `md.tpr` from successful grompp
+- Profile currently has `centos=icelake` removed (was blocking on no A100 nodes)
 
 ### Immediate next actions
-1. **Wait for benchmark job 968312** to finish. Check `~/simulations/bench/run_final_bench.sh.o968312`.
-2. **Run production walltime-interruption validation**: submit with PROD_WALLTIME=00:05:00, wait for interruption, re-submit, verify reaches 1000 ps. Use `run.sh submit` with proper state (setup+eq marked completed).
-3. **Update default MDPs** if benchmark results justify (nstlist=100, vbt=0.005).
-4. **Restore `centos=icelake` in profile** before 500ns runs.
+1. **Restore `centos=icelake` in profile** before 500ns runs.
+2. **Re-run combined benchmark** with `export OMP_NUM_THREADS=8`.
+3. **Run production walltime-interruption validation** on HPC.
+4. **Apply nstlist=100 + vbt=0.005 to default MDPs** after benchmark confirmation.
 5. **Apply C-rescale to production MDP** after validation (replace Berendsen for correct ensemble).
+6. **Configure BLM-KRAS_K 500ns × 3 replicates** via `setup/replicate.sh`.
 
 ### HPC profile gotcha (DO NOT REPEAT)
 - `SELECT_GPU` currently has NO `centos=icelake` constraint (removed to unblock GPU access when A100s were busy).
@@ -86,6 +88,7 @@ Job 968312 submitted, running now. Awaiting results.
 - To submit without A100 constraint: remove `centos=icelake` from SELECT_GPU temporarily.
 - Benchmark jobs run on A100 (~43 ns/day). V100 runs at ~20 ns/day.
 - `expect` chokes on `{}`, `[0-9]`, `$` in SSH commands. Upload `.sh` scripts instead of inline commands.
+- **Benchmark threading**: Always `export OMP_NUM_THREADS=8` before benchmark mdrun calls. Without it, subsequent runs in the same script may default to 1 thread.
 
 ---
 
@@ -309,16 +312,16 @@ If a stage finishes suspiciously fast, it likely FAILED (crash), not completed.
 | 14 | trajectory overwritten | missing `-append` | add `-append` to production |
 | 15 | NPT blows up / segfault | Parrinello-Rahman in equilibration | Berendsen NPT, PR production |
 | 16 | grompp aborts on 2 warnings | `-maxwarn 1` too strict | stage-specific + warning check |
-| 17 | production over-runs chunk | `-maxh` stops at walltime, not CHUNK_NS | **IMPLEMENTED, NOT VERIFIED**: extend-from-checkpoint in `lib/stages.sh`. Atomic TPR replacement. Stale lock recovery. `-nsteps -1` removed. Deployed to HPC. All production jobs so far failed at startup — HPC validation pending. |
+| 17 | production over-runs chunk | `-maxh` stops at walltime, not CHUNK_NS | **IMPLEMENTED + convert-tpr/mv VALIDATED on HPC** (`df3012e`): extend-from-checkpoint loop in `lib/stages.sh`. Atomic TPR replacement (`md.tpr.tmp.tpr`). Post-convert-tpr existence check. Stale lock recovery. `-nsteps -1` removed. convert-tpr → mv → checkpoint cycle verified on real GROMACS. **Walltime-interruption + resume NOT YET TESTED on HPC.** |
 
-### Benchmark findings (COMPLETE — job 968167 + 968312)
+### Benchmark findings (COMPLETE — job 968167 + 968361)
 - **nstlist=100**: 43.5 ns/day (+10.7% vs baseline 39.3). 0 LINCS. **ADOPT.**
 - **vbt=0.005**: 41.8 ns/day (+6.4%). Same physics. **ADOPT.**
 - **nstcalcenergy=1000**: 39.2 ns/day (-0.2%). **DO NOT adopt.**
 - **nstlist=40**: 39.7 ns/day (+1.0%). Negligible. Keep nstlist=100.
 - **Berendsen NPT**: 39.7 ns/day. Performance fine. Keep for equilibration.
-- **C-rescale NPT**: grompp failed (MDP typo: duplicate pcoupl + missing pcoupltype). Fixed MDP on HPC. Need clean benchmark run.
-- **Combined nstlist=100+vbt=0.005**: Job 968312 running. Check `~/simulations/bench/run_final_bench.sh.o968312`.
+- **C-rescale NPT**: 28.2 ns/day — **INVALID** (ran with 1 OpenMP thread). Fixed MDP on HPC (`bench/mdp_npt_crescale_fixed.mdp`). Re-run needed.
+- **Combined nstlist=100+vbt=0.005**: 25.9 ns/day — **INVALID** (ran with 1 OpenMP thread). Re-run needed with `export OMP_NUM_THREADS=8`.
 - amber14sb + **bsc1** DNA correction: NOT on this HPC; external source needed.
 
 ---
@@ -373,6 +376,25 @@ for p in projects/blm_kras_rep*; do
 done
 wait
 ```
+
+---
+
+## Test suite
+
+Tests live in `tests/` and use `tests/bin/fake_gmx` to simulate GROMACS without a GPU.
+
+```bash
+bash gromacs-pipeline/tests/unit.sh        # 20/20 — gmx.sh functions
+bash gromacs-pipeline/tests/integration.sh  # 17/18 — production loop
+```
+
+### Known test issues
+
+**Test 7 ("zero-progress detection (fatal)")** fails. The test runs `run_stage_production` twice:
+1. First with `FAKE_ZERO=1` — correctly returns non-zero (zero-progress detected).
+2. Second without `FAKE_ZERO` — succeeds, but the test expects failure.
+
+The production code does not persist failure state after zero-progress detection, allowing a clean retry. The repository contains no documentation, comments, or git history explaining whether this test expectation is intentional. **Requires maintainer clarification before modification.** See maintainer report for details.
 
 ---
 
