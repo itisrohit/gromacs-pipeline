@@ -448,6 +448,26 @@ Skills live in `.agent/skills/` and provide structured guidance for specific tas
 
 **Scripts this skill never executes:** `run.sh submit`, `lib/stages.sh`, `lib/gmx.sh`, `lib/scheduler.sh`
 
+### post-production
+
+**Purpose:** Verifies simulation health, orchestrates analyses, interprets results, and produces quality assessments after production completes.
+
+**Activates when:** Production is complete, QC is requested, or simulation convergence is questioned.
+
+**Files:**
+
+| File | Responsibility |
+|------|---------------|
+| `SKILL.md` | Entry point: purpose, activation, responsibilities, principles, evidence hierarchy |
+| `workflow.md` | How the agent thinks through post-production tasks (11-step reasoning) |
+| `playbook.md` | Operational knowledge: repository interaction principles, analysis procedures, interpretation |
+
+**Analyses supported:** Energy stability, RMSD, RMSF, radius of gyration, hydrogen bonds, DSSP, COM distance
+
+**Key principles:** Repository-first, evidence-first, verified knowledge, no guessing
+
+**Scripts this skill never executes:** `run.sh submit`, `lib/stages.sh`, `lib/gmx.sh`, `lib/scheduler.sh`
+
 ---
 
 ## When to refer to README vs AGENTS.md
