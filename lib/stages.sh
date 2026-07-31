@@ -243,7 +243,7 @@ run_stage_nvt() {
         -p output/setup/topol.top \
         -n output/setup/index.ndx \
         -o output/equilibration/nvt.tpr \
-        -maxwarn 1
+        -maxwarn 2
 
     local gpu_flags
     gpu_flags=$(gmx_gpu_flags)
@@ -276,7 +276,7 @@ run_stage_npt() {
         -p output/setup/topol.top \
         -n output/setup/index.ndx \
         -o output/equilibration/npt.tpr \
-        -maxwarn 1
+        -maxwarn 2
 
     local gpu_flags
     gpu_flags=$(gmx_gpu_flags)
@@ -308,7 +308,7 @@ run_stage_production() {
             -p output/setup/topol.top \
             -n output/setup/index.ndx \
             -o output/production/md.tpr \
-            -maxwarn 1
+            -maxwarn 2
     fi
 
     # Calculate maxh from walltime with 10% safety margin
