@@ -1,30 +1,44 @@
 #!/bin/bash
 set -euo pipefail
 
-cd "$(dirname "$0")"
+PIPELINE_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# ── Commands ──
+# ── Parse arguments: [command] [--force] [project_path] ──
 CMD="${1:-submit}"
+shift 1 2>/dev/null || true
 
-# ── Source runtime libraries ──
-source lib/state.sh
-source lib/scheduler.sh
+FORCE=""
+if [ "${1:-}" = "--force" ]; then
+    FORCE="--force"
+    shift 1
+fi
+
+PROJECT="${1:-${PWD}}"
+PROJECT_DIR="$(cd "$PROJECT" 2>/dev/null && pwd)" || {
+    echo "ERROR: Project directory not found: $PROJECT"
+    exit 1
+}
+
+cd "$PROJECT_DIR"
+
+# ── Source pipeline libraries ──
+source "$PIPELINE_DIR/lib/state.sh"
+source "$PIPELINE_DIR/lib/scheduler.sh"
 
 # ── Common setup for submit/status/report ──
 require_project() {
     state_require_initialized
-    source config.sh
+    source "$PROJECT_DIR/config.sh"
     scheduler_init
 }
 
 # ── submit: submit all pipeline phases ──
 cmd_submit() {
-    local force="${1:-}"
     require_project
     state_lock
     trap state_unlock EXIT
 
-    if [ "$force" != "--force" ]; then
+    if [ "$FORCE" != "--force" ]; then
         state_verify_fingerprint && echo "FINGERPRINT: match" || {
             echo "ERROR: Configuration has changed since initialization."
             echo "       Run with --force to submit anyway."
@@ -36,27 +50,11 @@ cmd_submit() {
     local dep_setup=""
     local dep_eq=""
 
-    # ── Helper: check if a phase is complete by output files ──
-    # Used when state says "running" but outputs exist (previous run
-    # completed without updating state). This avoids no-op resubmissions.
     phase_is_done() {
         local p="$1"
         case "$p" in
-            # Setup completes when the last stage (index) produces its output.
-            # All prior stages must succeed first, so ions.gro is a reliable
-            # sentinel — it is only written after prepare → topol → box →
-            # solvate → ions all complete successfully.
-            setup)         [ -f "output/setup/ions.gro" ] ;;
-            # Equilibration completes when the last stage (NPT) produces its
-            # output. The EM stage separately verifies log-based convergence
-            # before allowing NVT to proceed. NPT.gro is only written after
-            # EM → NVT → NPT all succeed.
-            equilibration)  [ -f "output/equilibration/npt.gro" ] ;;
-            # Production is excluded from file-based detection because md.xtc
-            # exists after the first frame — its mere presence does not
-            # indicate completion of the full trajectory. Production state
-            # is tracked by the workflow.json runs array and scheduler
-            # job status. The user runs `run.sh status` to sync state.
+            setup)         [ -f "$PROJECT_DIR/output/setup/ions.gro" ] ;;
+            equilibration)  [ -f "$PROJECT_DIR/output/equilibration/npt.gro" ] ;;
             production)     return 1 ;;
             *)             return 1 ;;
         esac
@@ -75,22 +73,22 @@ cmd_submit() {
         dep_setup=$(grep -o '"setup": {[^}]*}' .state/workflow.json | grep -o '"job_id": "[^"]*"' | cut -d'"' -f4)
     else
         echo "SETUP: submitting..."
-        # Generate job script
-        mkdir -p scripts
-        cat > scripts/setup.sh << 'SCRIPT'
+        mkdir -p "$PROJECT_DIR/scripts"
+        cat > "$PROJECT_DIR/scripts/setup.sh" << SCRIPT
 #!/bin/bash
 set -euo pipefail
-source config.sh
-source profiles/$CLUSTER.sh
-source lib/gmx.sh
-source lib/stages.sh
+cd "$PROJECT_DIR"
+PIPELINE_DIR="$PIPELINE_DIR"
+source "\$PIPELINE_DIR/profiles/\$CLUSTER.sh"
+source "\$PIPELINE_DIR/lib/gmx.sh"
+source "\$PIPELINE_DIR/lib/stages.sh"
 . /etc/profile.d/modules.sh 2>/dev/null || true
-for mod in "${MODULES[@]}"; do
-    module load "$mod" 2>/dev/null || echo "WARN: module $mod not found"
+for mod in "\${MODULES[@]}"; do
+    module load "\$mod" 2>/dev/null || echo "WARN: module \$mod not found"
 done
 gmx_check
 gmx_version_log
-gmx_version_pin "$GMX_VERSION"
+gmx_version_pin "\$GMX_VERSION"
 run_stage_prepare
 run_stage_topol
 run_stage_box
@@ -99,9 +97,9 @@ run_stage_ions
 run_stage_index
 echo "SETUP COMPLETE"
 SCRIPT
-        chmod +x scripts/setup.sh
+        chmod +x "$PROJECT_DIR/scripts/setup.sh"
 
-        dep_setup=$(scheduler_submit "scripts/setup.sh" "$SETUP_CPUS" "0" "$SETUP_MEM" "$SETUP_WALLTIME")
+        dep_setup=$(scheduler_submit "$PROJECT_DIR/scripts/setup.sh" "$SETUP_CPUS" "0" "$SETUP_MEM" "$SETUP_WALLTIME")
         state_update_phase "setup" "running" "$dep_setup"
     fi
 
@@ -118,30 +116,31 @@ SCRIPT
         dep_eq=$(grep -o '"equilibration": {[^}]*}' .state/workflow.json | grep -o '"job_id": "[^"]*"' | cut -d'"' -f4)
     else
         echo "EQUILIBRATION: submitting..."
-        mkdir -p scripts
-        cat > scripts/equilibration.sh << 'SCRIPT'
+        mkdir -p "$PROJECT_DIR/scripts"
+        cat > "$PROJECT_DIR/scripts/equilibration.sh" << SCRIPT
 #!/bin/bash
 set -euo pipefail
-source config.sh
-source profiles/$CLUSTER.sh
-source lib/gmx.sh
-source lib/stages.sh
+cd "$PROJECT_DIR"
+PIPELINE_DIR="$PIPELINE_DIR"
+source "\$PIPELINE_DIR/profiles/\$CLUSTER.sh"
+source "\$PIPELINE_DIR/lib/gmx.sh"
+source "\$PIPELINE_DIR/lib/stages.sh"
 . /etc/profile.d/modules.sh 2>/dev/null || true
-for mod in "${MODULES[@]}"; do
-    module load "$mod" 2>/dev/null || echo "WARN: module $mod not found"
+for mod in "\${MODULES[@]}"; do
+    module load "\$mod" 2>/dev/null || echo "WARN: module \$mod not found"
 done
 gmx_check
 gmx_version_log
-gmx_version_pin "$GMX_VERSION"
-export OMP_NUM_THREADS="${EQ_CPUS:-8}"
+gmx_version_pin "\$GMX_VERSION"
+export OMP_NUM_THREADS="\${EQ_CPUS:-8}"
 run_stage_em
 run_stage_nvt
 run_stage_npt
 echo "EQUILIBRATION COMPLETE"
 SCRIPT
-        chmod +x scripts/equilibration.sh
+        chmod +x "$PROJECT_DIR/scripts/equilibration.sh"
 
-        dep_eq=$(scheduler_submit "scripts/equilibration.sh" "$EQ_CPUS" "$EQ_GPUS" "$EQ_MEM" "$EQ_WALLTIME" "$dep_setup")
+        dep_eq=$(scheduler_submit "$PROJECT_DIR/scripts/equilibration.sh" "$EQ_CPUS" "$EQ_GPUS" "$EQ_MEM" "$EQ_WALLTIME" "$dep_setup")
         state_update_phase "equilibration" "running" "$dep_eq"
     fi
 
@@ -153,33 +152,34 @@ SCRIPT
         echo "PRODUCTION: already completed"
     else
         echo "PRODUCTION: submitting chunks..."
-        mkdir -p scripts
-        cat > scripts/production.sh << 'SCRIPT'
+        mkdir -p "$PROJECT_DIR/scripts"
+        cat > "$PROJECT_DIR/scripts/production.sh" << SCRIPT
 #!/bin/bash
 set -euo pipefail
-source config.sh
-source profiles/$CLUSTER.sh
-source lib/gmx.sh
-source lib/stages.sh
+cd "$PROJECT_DIR"
+PIPELINE_DIR="$PIPELINE_DIR"
+source "\$PIPELINE_DIR/profiles/\$CLUSTER.sh"
+source "\$PIPELINE_DIR/lib/gmx.sh"
+source "\$PIPELINE_DIR/lib/stages.sh"
 . /etc/profile.d/modules.sh 2>/dev/null || true
-for mod in "${MODULES[@]}"; do
-    module load "$mod" 2>/dev/null || echo "WARN: module $mod not found"
+for mod in "\${MODULES[@]}"; do
+    module load "\$mod" 2>/dev/null || echo "WARN: module \$mod not found"
 done
 gmx_check
 gmx_version_log
-gmx_version_pin "$GMX_VERSION"
-export OMP_NUM_THREADS="${PROD_CPUS:-8}"
+gmx_version_pin "\$GMX_VERSION"
+export OMP_NUM_THREADS="\${PROD_CPUS:-8}"
 run_stage_production
 echo "PRODUCTION CHUNK COMPLETE"
 SCRIPT
-        chmod +x scripts/production.sh
+        chmod +x "$PROJECT_DIR/scripts/production.sh"
 
         local chunks=$((PRODUCTION_NS / CHUNK_NS))
         local prev_job="$dep_eq"
 
         for i in $(seq 1 "$chunks"); do
             local job_id
-            job_id=$(scheduler_submit "scripts/production.sh" "$PROD_CPUS" "$PROD_GPUS" "$PROD_MEM" "$PROD_WALLTIME" "$prev_job")
+            job_id=$(scheduler_submit "$PROJECT_DIR/scripts/production.sh" "$PROD_CPUS" "$PROD_GPUS" "$PROD_MEM" "$PROD_WALLTIME" "$prev_job")
             state_update_production_chunk "$i" "$job_id" "running"
             prev_job="$job_id"
         done
@@ -189,7 +189,7 @@ SCRIPT
 
     echo ""
     echo "All jobs submitted."
-    echo "Check status: ./run.sh status"
+    echo "Check status: $0 status $PROJECT_DIR"
 }
 
 # ── status: check job status ──
@@ -230,7 +230,7 @@ cmd_report() {
         status=$(grep -o "\"$phase\": {[^}]*}" .state/workflow.json 2>/dev/null | grep -o '"status": "[^"]*"' | cut -d'"' -f4 || echo "unknown")
         local jid
         jid=$(grep -o "\"$phase\": {[^}]*}" .state/workflow.json 2>/dev/null | grep -o '"job_id": "[^"]*"' | cut -d'"' -f4 || echo "-")
-        local log_file="output/logs/${phase}.o${jid}"
+        local log_file="$PROJECT_DIR/output/logs/${phase}.o${jid}"
 
         local walltime=""
         if [ -f "$log_file" ]; then
@@ -241,14 +241,14 @@ cmd_report() {
     done
 
     echo ""
-    echo "  Logs: output/logs/"
+    echo "  Logs: $PROJECT_DIR/output/logs/"
     echo "  Report generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 
 # ── Main dispatch ──
 case "$CMD" in
     submit)
-        cmd_submit "${2:-}"
+        cmd_submit
         ;;
     status)
         cmd_status
@@ -256,11 +256,14 @@ case "$CMD" in
     report)
         cmd_report
         ;;
-    --force)
-        cmd_submit "--force"
-        ;;
     *)
-        echo "Usage: $0 {submit|status|report|--force}"
+        echo "Usage: $0 {submit|status|report} [--force] [project_path]"
+        echo ""
+        echo "  submit [--force] [path]   Submit all pipeline jobs"
+        echo "  status [path]            Check job status"
+        echo "  report [path]            Generate completion report"
+        echo ""
+        echo "  project_path defaults to current directory"
         exit 1
         ;;
 esac

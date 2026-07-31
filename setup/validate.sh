@@ -1,6 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
+PIPELINE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+PROJECT_DIR="${1:-${PWD}}"
+cd "$PROJECT_DIR"
+
 echo "============================================"
 echo "  GROMACS HPC — Validate Project"
 echo "============================================"
@@ -47,7 +51,7 @@ echo ""
 echo "── Cluster Profile ──"
 
 if [ -n "${CLUSTER:-}" ]; then
-    PROFILE_PATH="profiles/$CLUSTER.sh"
+    PROFILE_PATH="$PIPELINE_DIR/profiles/$CLUSTER.sh"
     if [ -f "$PROFILE_PATH" ]; then
         check_ok "Profile found: $PROFILE_PATH"
     else

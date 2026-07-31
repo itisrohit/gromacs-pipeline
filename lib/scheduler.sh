@@ -3,11 +3,11 @@ set -euo pipefail
 
 # ── Source and validate the active cluster profile ──
 scheduler_init() {
-    local profile="profiles/$CLUSTER.sh"
+    local profile="$PIPELINE_DIR/profiles/$CLUSTER.sh"
     if [ ! -f "$profile" ]; then
         echo "ERROR: Cluster profile not found: $profile"
         echo "       Set CLUSTER in config.sh to one of:"
-        ls profiles/*.sh 2>/dev/null | sed 's/.*\///; s/\.sh$//' | sed 's/^/       - /'
+        ls "$PIPELINE_DIR/profiles/"*.sh 2>/dev/null | sed 's/.*\///; s/\.sh$//' | sed 's/^/       - /'
         exit 1
     fi
 

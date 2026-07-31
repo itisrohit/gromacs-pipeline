@@ -1,6 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
+PIPELINE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+CHECK_MODE=0
+if [ "${1:-}" = "--check" ]; then
+    CHECK_MODE=1
+    shift
+fi
+
 PROJECT_DIR="${1:-.}"
 cd "$PROJECT_DIR"
 
@@ -18,12 +26,10 @@ source "config.sh"
 
 FILES_TO_HASH=("config.sh")
 
-# Include the active cluster profile
-if [ -n "${CLUSTER:-}" ] && [ -f "profiles/$CLUSTER.sh" ]; then
-    FILES_TO_HASH+=("profiles/$CLUSTER.sh")
+if [ -n "${CLUSTER:-}" ] && [ -f "$PIPELINE_DIR/profiles/$CLUSTER.sh" ]; then
+    FILES_TO_HASH+=("$PIPELINE_DIR/profiles/$CLUSTER.sh")
 fi
 
-# Include input files
 for fvar in PDB EM_MDP NVT_MDP NPT_MDP MD_MDP; do
     fpath="${!fvar:-}"
     if [ -n "$fpath" ] && [ -f "$fpath" ]; then
@@ -44,7 +50,7 @@ if [ -z "$FINGERPRINT" ]; then
     )
 fi
 
-if [ "${1:-}" = "--check" ]; then
+if [ "$CHECK_MODE" -eq 1 ]; then
     echo "$FINGERPRINT"
 else
     echo "$FINGERPRINT" > ".state/fingerprint"

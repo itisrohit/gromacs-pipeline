@@ -76,14 +76,14 @@ state_update_production_chunk() {
 # The stored fingerprint is only written during initialization
 # (setup/fingerprint.sh) or explicit reinitialization.
 state_verify_fingerprint() {
-    if [ ! -f ".state/fingerprint" ]; then
+    if [ ! -f "$PROJECT_DIR/.state/fingerprint" ]; then
         return 2
     fi
     local previous
-    previous=$(cat ".state/fingerprint")
+    previous=$(cat "$PROJECT_DIR/.state/fingerprint")
 
     local current
-    current=$(bash setup/fingerprint.sh --check 2>/dev/null || echo "")
+    current=$(bash "$PIPELINE_DIR/setup/fingerprint.sh" --check "$PROJECT_DIR" 2>/dev/null || echo "")
 
     if [ -z "$current" ]; then
         return 2
