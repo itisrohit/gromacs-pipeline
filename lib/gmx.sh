@@ -9,7 +9,10 @@ gmx_check() {
     for candidate in gmx_mpi gmx; do
         if command -v "$candidate" &>/dev/null; then
             GMX="$candidate"
-            GMX_VERSION=$("$GMX" --version 2>&1 | head -1)
+            # Extract only the version number. Some clusters emit MPI
+            # warnings on stderr before the version banner, so filter
+            # for the actual version pattern instead of taking head -1.
+            GMX_VERSION=$("$GMX" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1)
             return 0
         fi
     done
@@ -34,7 +37,7 @@ gmx_version_gte() {
     version_str=$(echo "$GMX_VERSION" | grep -oE '^[0-9]+\.[0-9]+' | head -1)
 
     if [ -z "$version_str" ]; then
-        echo "WARNING: Could not parse GROMACS version from: $GMX_VERSION"
+        echo "WARNING: Could not parse GROMACS version from: $GMX_VERSION" >&2
         return 1
     fi
 
