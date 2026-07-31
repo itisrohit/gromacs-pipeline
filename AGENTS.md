@@ -123,7 +123,7 @@ projects/<name>/
 
 ## The HPC environment (IITD)
 
-- Login: `ssh blz208818@hpc.iitd.ac.in` (password `m0203SFR`, only in expect)
+- Login: `ssh <user>@<hpc-host>` (password in secure storage, only in expect)
 - Login nodes: login07/08 — file mgmt + job submission only
 - Scheduler: **PBS** (`qsub`). Project: `helicases.spons`. Queue: `standard`/`high`
 - GROMACS: `module load apps/gromacs/2023.2/gnu` → `gmx_mpi`
@@ -139,9 +139,9 @@ projects/<name>/
 expect << 'EOF'
 set timeout 60
 spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-    blz208818@hpc.iitd.ac.in "COMMANDS..."
+    <user>@<hpc-host> "COMMANDS..."
 expect "password:"
-send "m0203SFR\r"
+send "<password>\r"
 expect eof
 EOF
 ```
@@ -168,7 +168,7 @@ cp <file> /tmp/hpc-upload/gromacs-pipeline/<path>/
 cd /tmp && tar czf hpc-upload.tar.gz hpc-upload/
 
 # 3. Upload
-scp /tmp/hpc-upload.tar.gz blz208818@hpc.iitd.ac.in:~/simulations/
+scp /tmp/hpc-upload.tar.gz <user>@<hpc-host>:~/simulations/
 
 # 4. On HPC:
 tar xzf hpc-upload.tar.gz
@@ -225,7 +225,7 @@ Do this after any state corruption. Then re-`submit`.
 ## Monitor
 
 ```bash
-qstat -u blz208818                # R=running Q=queued H=held F=finished
+qstat -u <user>                # R=running Q=queued H=held F=finished
 ```
 
 Stage completion is determined by OUTPUT FILE presence:

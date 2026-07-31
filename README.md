@@ -112,14 +112,14 @@ The pipeline lives in its own git repo. Upload it to the HPC with `scp`
 
 ```bash
 # From the gromacs-pipeline directory:
-scp -r ./* blz208818@hpc.iitd.ac.in:~/simulations/gromacs-pipeline/
+scp -r ./* <user>@<hpc-host>:~/simulations/gromacs-pipeline/
 ```
 
 ### Upload a project
 
 ```bash
 # From your projects directory:
-scp -r projects/blm_cmyc blz208818@hpc.iitd.ac.in:~/simulations/projects/
+scp -r projects/blm_cmyc <user>@<hpc-host>:~/simulations/projects/
 ```
 
 ### Notes
@@ -130,7 +130,7 @@ scp -r projects/blm_cmyc blz208818@hpc.iitd.ac.in:~/simulations/projects/
   generated there. Only upload code/input changes.
 - For a clean sync (removes stale files on HPC), use:
   ```bash
-  rsync -av --delete ./ blz208818@hpc.iitd.ac.in:~/simulations/gromacs-pipeline/
+  rsync -av --delete ./ <user>@<hpc-host>:~/simulations/gromacs-pipeline/
   ```
 - **Do NOT `git clone` on the HPC** — it hangs. Always tar+scp upload.
 - macOS tar adds `._` files. Delete them from force fields:
