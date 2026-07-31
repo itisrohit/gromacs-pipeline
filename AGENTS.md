@@ -89,21 +89,119 @@ See `~/simulations/bench/benchmark_summary.log` on HPC.
   - Completed 137.2 ps (step 68600), wrote checkpoint, exited gracefully
   - Performance: 44.2 ns/day
   - Production loop correctly detected walltime exhaustion and exited
-- **Production chaining validation: NOT YET DONE**
-  - Goal: verify multiple extensions, checkpoint resume, completion detection
-  - Strategy: each PBS job completes at least one extension under normal conditions
-  - Validation tolerates small variations in completed simulation time
-  - Validates: monotonic checkpoint increase, correct target calculation, resume from latest checkpoint, continuous trajectory growth, completion detection exactly once
-- **To reach 1 ns**: re-submit with `PROD_WALLTIME="01:00:00"`. Loop resumes from 137.2 ps checkpoint.
-- MDP updated: nstlist=100, vbt=0.005
-- Profile restored: `centos=icelake` added back to SELECT_GPU
+
+### Validation hierarchy
+
+Validation occurs in three levels. Each level depends on the previous.
+
+```
+Level 1: Single-Replicate Engineering Validation
+    ↓
+Level 2: Multi-Replicate Engineering Validation (n=3)
+    ↓
+Level 3: Scientific Reproducibility Considerations
+```
+
+---
+
+#### Level 1 — Single-Replicate Engineering Validation
+
+**Prerequisite:** None (entry point).
+
+**Purpose:** Validate the production extension/chaining implementation for a single project.
+
+**What it validates:**
+- Checkpoint creation and reading
+- Checkpoint resume after interruption
+- convert-tpr extension with correct target
+- Target calculation (min of chunk + current, production limit)
+- Repeated production extension (multiple chunks per job)
+- Production completion detection
+- PRODUCTION_COMPLETE marker creation
+- Idempotent re-submission after completion
+
+**Current status:** Partially complete.
+- Walltime interruption validated (job 968472: 137.2 ps, checkpoint written, exited gracefully).
+- Full chaining validation (multiple extensions): **NOT YET DONE**.
+
+**Validation configuration:**
+- PRODUCTION_NS: 500 ps
+- CHUNK_NS: 100 ps
+- PROD_WALLTIME: 150 seconds
+- Expected: 5 jobs, 4 resumptions, 1 completion
+- Total runtime: ~12 minutes
+
+**This validation proves:** The production extension algorithm works for a single simulation.
+
+---
+
+#### Level 2 — Multi-Replicate Engineering Validation (n=3)
+
+**Prerequisite:** Level 1 must have passed.
+
+**Purpose:** Validate that the already-validated chaining logic operates correctly for multiple independent replicates.
+
+**What it validates:**
+- Replicate isolation (separate directories)
+- Independent workflow state (separate .state/)
+- Independent checkpoints (separate md.cpt)
+- Independent trajectories (separate md.xtc)
+- Independent completion markers (separate PRODUCTION_COMPLETE)
+- Idempotent re-runs per replicate
+- Orchestration correctness (parallel submission)
+
+**What it does NOT re-test:**
+- Chaining algorithm (already validated in Level 1)
+- Checkpoint resume logic (already validated in Level 1)
+- convert-tpr extension (already validated in Level 1)
+
+**Current status:** NOT YET DONE.
+
+**Validation configuration:**
+- Create 3 replicates from template
+- Submit all 3 in parallel
+- Each runs with same Level 1 config (500 ps, 100 ps chunks, 150s walltime)
+- Verify isolation after completion
+
+**This validation proves:** The repository correctly manages multiple independent simulations.
+
+---
+
+#### Level 3 — Scientific Reproducibility Considerations
+
+**Prerequisite:** Levels 1 and 2 must have passed.
+
+**Purpose:** Document what repository validation does NOT prove scientifically.
+
+**This is NOT repository validation.** These are scientific considerations for production runs.
+
+**What repository validation proves:**
+- Replicates are isolated
+- Replicates run independently
+- Replicates complete independently
+
+**What repository validation does NOT prove:**
+- Statistical independence of trajectories
+- Correct ensemble sampling
+- Physical accuracy of simulation
+
+**Scientific considerations:**
+- Stochastic initialization: `gen_seed = -1` in NVT MDP uses time-based automatic seed selection (official GROMACS behaviour)
+- Velocity generation: Velocities generated from time-dependent seed during NVT equilibration
+- Thermostat: v-rescale applies stochastic velocity rescaling (official GROMACS behaviour)
+- Barostat: Parrinello-Rahman introduces stochastic fluctuations (official GROMACS behaviour)
+- Controlled variables: FORCEFIELD, topology, MDP, production length, chunk size, walltime, temperature, pressure
+- Variable components: Project identity, output directory, checkpoint history, stochastic initialization, resulting trajectory
+
+**Repository validation does NOT claim to verify scientific reproducibility.**
 
 ### Immediate next actions
-1. **Re-submit production** with longer walltime to complete 1 ns.
-2. **Re-run combined benchmark** with `export OMP_NUM_THREADS=8`.
-3. **Apply nstlist=100 + vbt=0.005 to default MDPs** after benchmark confirmation.
-4. **Apply C-rescale to production MDP** after validation (replace Berendsen for correct ensemble).
-5. **Configure BLM-KRAS_K 500ns × 3 replicates** via `setup/replicate.sh`.
+1. **Complete Level 1 validation** — run 500 ps with 100 ps chunks, 150s walltime.
+2. **Complete Level 2 validation** — run 3 replicates in parallel, verify isolation.
+3. **Re-run combined benchmark** with `export OMP_NUM_THREADS=8`.
+4. **Apply nstlist=100 + vbt=0.005 to default MDPs** after benchmark confirmation.
+5. **Apply C-rescale to production MDP** after validation (replace Berendsen for correct ensemble).
+6. **Configure BLM-KRAS_K 500ns × 3 replicates** via `setup/replicate.sh`.
 
 ### Validation matrix
 
