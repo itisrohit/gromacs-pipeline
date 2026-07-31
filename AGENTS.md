@@ -259,13 +259,13 @@ qstat -u <user>                # R=running Q=queued H=held F=finished
 
 Stage completion is determined by OUTPUT FILE presence:
 
-| Stage | Sentinal file |
+| Stage | Sentinel file |
 |-------|--------------|
 | setup done | `output/setup/index.ndx` |
 | EM done | `output/equilibration/em.gro` |
 | NVT done | `output/equilibration/nvt.gro` |
 | NPT done | `output/equilibration/npt.gro` |
-| production | `output/production/md.xtc` |
+| production | `output/production/PRODUCTION_COMPLETE` (marker) or `output/production/md.xtc` (trajectory) |
 
 PBS job logs live in the project root: `projects/blm_cmyc/<script>.o<jobid>`.
 
