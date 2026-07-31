@@ -84,6 +84,57 @@ Monitor with `bash gromacs-pipeline/run.sh status projects/my_system`.
 
 ---
 
+## Deploy to the HPC (from your local machine)
+
+The code lives in your local git repo. Upload it to the HPC with `scp`
+(you'll be prompted for your HPC password each time). Pick the commands
+for wherever you are locally:
+
+### From `rohit2/gromacs-pipeline/`
+
+```bash
+# Upload pipeline changes
+scp -r ./* blz208818@hpc.iitd.ac.in:~/simulations/gromacs-pipeline/
+
+# Upload the project
+scp -r ../projects/blm_cmyc blz208818@hpc.iitd.ac.in:~/simulations/projects/
+```
+
+### From `rohit2/projects/`
+
+```bash
+# Upload just the project
+scp -r blm_cmyc blz208818@hpc.iitd.ac.in:~/simulations/projects/
+
+# Upload the pipeline (one level up)
+scp -r ../gromacs-pipeline/* blz208818@hpc.iitd.ac.in:~/simulations/gromacs-pipeline/
+```
+
+### From `rohit2/projects/blm_cmyc/`
+
+```bash
+# Upload this project
+scp -r . blz208818@hpc.iitd.ac.in:~/simulations/projects/blm_cmyc/
+
+# Upload the pipeline (two levels up)
+scp -r ../../gromacs-pipeline/* blz208818@hpc.iitd.ac.in:~/simulations/gromacs-pipeline/
+```
+
+### Notes
+
+- **`scp -r` merges/overwrites** — fine for source files (config, mdp, lib),
+  but it will NOT delete files on the HPC that you removed locally.
+- **Never upload `output/` or `.state/`** back to the HPC — those are
+  generated there. Only upload code/input changes.
+- Prefer uploading only the files you changed (like the deploy pattern in
+  `AGENTS.md`) over re-uploading everything.
+- For a clean sync (removes stale files on HPC), use:
+  ```bash
+  rsync -av --delete ./ blz208818@hpc.iitd.ac.in:~/simulations/gromacs-pipeline/
+  ```
+
+---
+
 ## Full workflow
 
 ### 1. Create a project
