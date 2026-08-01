@@ -43,13 +43,30 @@ known pitfalls, and how to get an end-to-end run working.
 
 ## CURRENT STATUS — READ THIS FIRST (as of the last session)
 
-**Phase**: Level 1 validation IN PROGRESS. Job 968580 queued on HPC, waiting for A100 slot.
+**Phase**: Level 1 validation ACTIVE. Checkpoint advanced 137.2 → 200.2 ps. Job 968587 on khas002 (haswell — to be replaced, A100 is the target).
 
 ### Recent fixes (committed)
 1. **TPR filename mismatch** (`df3012e`): `convert-tpr -o md.tpr.tmp` created `md.tpr.tmp.tpr` (GROMACS appends `.tpr`). Fixed to use `md.tpr.tmp.tpr` consistently. Validated on HPC with real GROMACS.
 2. **fake_gmx awk field index** (`1d1c37e`): `convert-tpr` writes `target = value` (3 fields), but mdrun awk read `$2` (`=`) instead of `$3` (value). Fixed. Integration tests: 17/18 pass.
 3. **Trajectory preparation** (`0a89774`): Added `post/prepare.sh` for PBC correction, centering, fitting, stripping. Tested on HPC with real production trajectory. Refactored: removed dead code, extracted `get_group_number()` helper.
 4. **AGENTS.md updates** (`26100f9`): Added validation hierarchy (Level 1/2/3), operational commands, post-Level-1 roadmap, verified HPC status.
+
+### Key HPC learnings this session (IMPORTANT)
+- **Target node = A100 (`aice*`, `centos=icelake`).** This is the ONLY acceptable GPU class — the user's hard requirement.
+- **haswell (`khas*`, e.g. khas002) nodes are BROKEN/slow — do NOT use.** Job 968587 landed there (submitted without `centos=icelake`); it runs but on the wrong hardware. Kill + resubmit with A100 constraint.
+- **A100 nodes are congested** — `centos=icelake` GPU jobs queue and wait. Accept the queue wait; do NOT fall back to haswell/skylake.
+- Job 968584 failed with `Compatible GPUs must have been found` — submitted WITHOUT `-l select=...:ngpus=1` (no GPU resource request).
+- Job 968585 queued long with `centos=icelake` (A100 busy), killed manually.
+- **CHUNK_NS must fit walltime:** 0.1 ns (100 ps) needs ~197s at 43.7 ns/day but PROD_WALLTIME=150s → job killed mid-chunk. Reduced CHUNK_NS=0.05 (50 ps, ~115s).
+- Correct A100 submission: `qsub -P helicases.spons -l select=1:ncpus=8:ngpus=1:centos=icelake -l walltime=00:02:30 ...`
+
+### Level 1 validation progress (BLM-cMYC 500 ps)
+| Job | Result | Checkpoint |
+|-----|--------|-----------|
+| 968580 | ✅ Ran 137.2→200.2 ps (43.7 ns/day), PBS killed at walltime | 200.2 ps |
+| 968584 | ❌ Failed: no GPU resource requested (`ngpus=1` missing from select) | — |
+| 968585 | ⏸️ Queued long: `centos=icelake` (A100 busy), killed manually | — |
+| 968587 | ⚠️ RUNNING on khas002 (haswell) — WRONG NODE, kill + resubmit on A100 | in progress |
 
 ### Production chunking (IMPLEMENTED, DEPLOYED, VALIDATED)
 The extend-from-checkpoint loop is in `lib/stages.sh:run_stage_production()`.
@@ -121,16 +138,17 @@ Level 3: Scientific Reproducibility Considerations
 - PRODUCTION_COMPLETE marker creation
 - Idempotent re-submission after completion
 
-**Current status:** Partially complete.
+**Current status:** In progress.
 - Walltime interruption validated (job 968472: 137.2 ps, checkpoint written, exited gracefully).
-- Full chaining validation (multiple extensions): **NOT YET DONE**.
+- Walltime chunking validated (job 968580: 137.2→200.2 ps, 43.7 ns/day, PBS killed at 150s walltime, checkpoint resumed).
+- Full chaining validation (multiple extensions to completion): **IN PROGRESS** — checkpoint at 200.2 ps. Must run on A100 (`centos=icelake`).
 
-**Validation configuration:**
+**Validation configuration (UPDATED):**
 - PRODUCTION_NS: 500 ps
-- CHUNK_NS: 100 ps
+- CHUNK_NS: 50 ps (reduced from 100 ps — 100 ps chunk needs ~197s but walltime is 150s)
 - PROD_WALLTIME: 150 seconds
-- Expected: 5 jobs, 4 resumptions, 1 completion
-- Total runtime: ~12 minutes
+- Expected: ~7 jobs, ~6 resumptions, 1 completion
+- Total runtime: ~12 minutes (on A100)
 
 **This validation proves:** The production extension algorithm works for a single simulation.
 
@@ -197,42 +215,49 @@ Level 3: Scientific Reproducibility Considerations
 **Repository validation does NOT claim to verify scientific reproducibility.**
 
 ### Immediate next actions
-1. **Complete Level 1 validation** — run 500 ps with 100 ps chunks, 150s walltime.
-2. **Complete Level 2 validation** — run 3 replicates in parallel, verify isolation.
-3. **Re-run combined benchmark** with `export OMP_NUM_THREADS=8`.
+1. **Complete Level 1 validation on A100** — kill haswell job 968587, resubmit with `centos=icelake`, continue manual qsub until 500 ps (checkpoint at 200.2 ps).
+2. **Complete Level 2 validation** — run 3 replicates in parallel on A100, verify isolation.
+3. **Re-run combined benchmark** with `export OMP_NUM_THREADS=8` on A100.
 4. **Apply nstlist=100 + vbt=0.005 to default MDPs** after benchmark confirmation.
 5. **Apply C-rescale to production MDP** after validation (replace Berendsen for correct ensemble).
 6. **Configure BLM-KRAS_K 500ns × 3 replicates** via `setup/replicate.sh`.
 
 ### Current operational status
 
-**What we are doing right now:** Level 1 validation (single-replicate chaining).
+**What we are doing right now:** Level 1 validation (single-replicate chaining), active.
 
 **How we are doing it:**
-1. Updated config: `PRODUCTION_NS=0.5`, `CHUNK_NS=0.1`, `PROD_WALLTIME="00:02:30"`
+1. Updated config: `PRODUCTION_NS=0.5`, `CHUNK_NS=0.05`, `PROD_WALLTIME="00:02:30"`
 2. Reset workflow state to `pending`
-3. Submitted production job with `--force`
-4. Job 968580.pbshpc is queued, waiting for A100 GPU slot
+3. Submit production job **ONLY on A100** (`centos=icelake`):
+   ```bash
+   cd ~/simulations/projects/blm_cmyc
+   qsub -P helicases.spons -l select=1:ncpus=8:ngpus=1:centos=icelake \
+        -l walltime=00:02:30 \
+        -v PROJECT_DIR=/home/bioschool/phd/blz208818/simulations/projects/blm_cmyc \
+        scripts/production.sh
+   ```
+   **NEVER drop `centos=icelake`** — that lands on haswell/skylake (broken/slow). Accept A100 queue waits.
 
 **What we are expecting:**
-- 5 PBS jobs total (500 ps / 100 ps chunks)
+- ~7 PBS jobs total (500 ps / 50 ps chunks)
 - Each job completes at least one extension
 - Checkpoint time monotonically increases
-- PRODUCTION_COMPLETE marker created after job 5
-- Total runtime ~12 minutes
+- PRODUCTION_COMPLETE marker created after final job
+- Total runtime ~12 minutes on A100
 
 **Current state (verified):**
-- Job 968580.pbshpc: Queued (Q), waiting for A100 GPU slot
-- Config: PRODUCTION_NS=0.5, CHUNK_NS=0.1, PROD_WALLTIME=00:02:30
-- Production dir: md.tpr (20M), md.cpt (16M), md.xtc (7.6M), md.edr (11K), md.log (33K) — from previous 137.2 ps run
-- State: production = "running" (job 968580), setup/equilibration = "completed"
-- A100 nodes: all busy (0/2 GPUs free on each aice node)
+- Job 968587.pbshpc: RUNNING on khas002 (haswell) — WRONG NODE, to be killed + resubmitted on A100
+- Checkpoint: 200.2 ps (from job 968580)
+- Config: PRODUCTION_NS=0.5, CHUNK_NS=0.05, PROD_WALLTIME=00:02:30
+- Production dir: md.tpr, md.cpt, md_prev.cpt, md.xtc (13.2M), md.edr, md.log
+- State: production = "running"
 
 **To check status:**
 ```bash
 qstat -u <user>
-cat ~/simulations/projects/blm_cmyc/.state/workflow.json
 ls -la ~/simulations/projects/blm_cmyc/output/production/
+tail -5 ~/simulations/projects/blm_cmyc/output/production/md.log
 ```
 
 **After job completes, verify:**
@@ -243,13 +268,17 @@ gmx_mpi dump -cp output/production/md.cpt 2>/dev/null | grep "^t ="
 # Check if PRODUCTION_COMPLETE exists
 ls output/production/PRODUCTION_COMPLETE
 
-# If not complete, re-submit
-bash gromacs-pipeline/run.sh submit --force projects/blm_cmyc
+# If not complete, re-submit on A100 ONLY (never drop centos=icelake)
+cd ~/simulations/projects/blm_cmyc
+qsub -P helicases.spons -l select=1:ncpus=8:ngpus=1:centos=icelake \
+     -l walltime=00:02:30 \
+     -v PROJECT_DIR=/home/bioschool/phd/blz208818/simulations/projects/blm_cmyc \
+     scripts/production.sh
 ```
 
 ### After Level 1 passes — what comes next
 
-Once Level 1 validation completes (5 jobs, 4 resumptions, PRODUCTION_COMPLETE created):
+Once Level 1 validation completes (~7 jobs, ~6 resumptions, PRODUCTION_COMPLETE created):
 
 **Step 1: Verify Level 1 results**
 - All 5 jobs completed
@@ -439,7 +468,8 @@ projects/<name>/
 - Login nodes: login07/08 — file mgmt + job submission only
 - Scheduler: **PBS** (`qsub`). Project: `helicases.spons`. Queue: `standard`/`high`
 - GROMACS: `module load apps/gromacs/2023.2/gnu` → `gmx_mpi`
-- Node types: `csky*` CPU, `vsky*` V100 GPU, `aice*` A100 GPU (`centos=icelake`)
+- Node types: `csky*` CPU, `vsky*` V100 GPU, `aice*` A100 GPU (`centos=icelake`), `khas*` haswell GPU (**broken/slow — AVOID**), `cice*` icelake CPU
+- **A100 (`centos=icelake`) is the ONLY GPU class to use** — haswell/skylake GPU nodes are broken/slow
 - Pipeline on HPC: `~/simulations/gromacs-pipeline/`
 - Projects on HPC: `~/simulations/projects/<name>/`
 
@@ -570,19 +600,24 @@ expect eof
 EOF
 ```
 
-### Submit production (with --force)
+### Submit production on A100 (manual qsub — verified pattern)
+
+`run.sh submit --force` does NOT let you select the node class for a single
+stage, so use manual qsub for production. **A100 only (`centos=icelake`).**
 
 ```bash
 expect << 'EOF'
 set timeout 120
 spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-    <user>@<hpc-host> "cd ~/simulations && bash gromacs-pipeline/run.sh submit --force projects/<name> 2>&1; echo EXIT=\$?"
+    <user>@<hpc-host> "cd ~/simulations/projects/<name> && qsub -P helicases.spons -l select=1:ncpus=8:ngpus=1:centos=icelake -l walltime=\$PROD_WALLTIME -v PROJECT_DIR=\$(pwd) scripts/production.sh"
 expect "password:"
 send "<password>\r"
-expect "EXIT="
 expect eof
 EOF
 ```
+
+**NEVER drop `centos=icelake`** — without it the job lands on haswell/skylake
+(broken/slow). A100 jobs queue when congested; wait.
 
 ### Update config on HPC
 
