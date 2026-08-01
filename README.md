@@ -81,7 +81,8 @@ gromacs-pipeline/
 │   └── bin/
 │       └── fake_gmx          # Mock GROMACS for testing
 ├── docs/
-│   └── benchmark.md          # Performance benchmark report
+│   ├── benchmark.md          # Performance benchmark report
+│   └── hpc_guide.md          # IIT Delhi HPC usage guide (nodes, queues, PBS, SSH)
 ├── .agent/                   # Agent skills for input preparation
 ├── AGENTS.md                 # Agent/developer operations guide
 └── README.md                 # This file
