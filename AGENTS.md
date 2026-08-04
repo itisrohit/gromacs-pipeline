@@ -29,7 +29,7 @@ Build a **generic, reusable, Bash-only GROMACS MD pipeline** that:
 
 - Works **end-to-end** for **any biomolecular input** (protein, protein–DNA,
   protein–RNA, protein–ligand) with no project-specific code in the pipeline.
-- Runs on **any HPC cluster** (PBS / Slurm / LSF) via cluster profiles.
+- Runs on **any HPC cluster** (PBS) via cluster profiles.
 - Is portable, reproducible, and resumable (checkpoint-aware).
 - User supplies only `input/system.pdb` + `config.sh`. Everything else is
   GROMACS + the pipeline.

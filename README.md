@@ -1,6 +1,6 @@
 # GROMACS HPC Pipeline
 
-A minimal, Bash-only molecular dynamics pipeline for HPC clusters (PBS / Slurm / LSF).
+A minimal, Bash-only molecular dynamics pipeline for HPC clusters (PBS).
 Built around standard GROMACS capabilities — no Python, no workflow engines, no Docker.
 
 ---
@@ -49,7 +49,7 @@ gromacs-pipeline/
 ├── run.sh                    # Main entry point (submit/status/report)
 ├── lib/
 │   ├── gmx.sh                # GROMACS discovery, version check, GPU flags, checkpoint reading
-│   ├── scheduler.sh          # PBS/Slurm/LSF submission abstraction
+│   ├── scheduler.sh          # PBS submission abstraction
 │   ├── stages.sh             # All MD stage functions (including production loop)
 │   └── state.sh              # Locking, workflow state, fingerprint check
 ├── setup/
@@ -65,8 +65,6 @@ gromacs-pipeline/
 ├── profiles/
 │   ├── iitd.sh               # IIT Delhi HPC (PBS)
 │   ├── generic-pbs.sh        # Generic PBS template
-│   ├── generic-slurm.sh      # Generic Slurm template
-│   └── generic-lsf.sh        # Generic LSF template
 ├── mdp/                      # Default MDP files (copied to projects)
 │   ├── em.mdp
 │   ├── nvt.mdp
