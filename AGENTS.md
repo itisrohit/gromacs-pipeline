@@ -43,7 +43,7 @@ known pitfalls, and how to get an end-to-end run working.
 
 ## CURRENT STATUS — READ THIS FIRST (as of the last session)
 
-**Phase**: PRODUCTION READY ✅. Engineering validation complete (Level 1 + Level 2). BLM-cMYC 500 ns × 3 replicates ready to submit.
+**Phase**: PRODUCTION IN PROGRESS 🚀. BLM-cMYC 500 ns × 3 replicates launched on A100. Jobs 972360, 972361, 972362 running.
 
 ### Recent fixes (committed)
 1. **TPR filename mismatch** (`df3012e`): `convert-tpr -o md.tpr.tmp` created `md.tpr.tmp.tpr` (GROMACS appends `.tpr`). Fixed to use `md.tpr.tmp.tpr` consistently. Validated on HPC with real GROMACS.
@@ -204,7 +204,15 @@ Level 3: Scientific Reproducibility Considerations
 
 ### Current operational status
 
-**What we are doing right now:** PRODUCTION READY ✅. Engineering validation complete. Ready to submit BLM-cMYC 500 ns × 3 replicates.
+**What we are doing right now:** PRODUCTION IN PROGRESS 🚀. BLM-cMYC 500 ns × 3 replicates launched on A100. Monitoring for completion.
+
+**Production launch (2026-08-04):**
+- Template: `projects/blm_cmyc` (setup ✅, equilibration ✅, checkpoint 236.4 ps)
+- Replicates created: `blm_cmyc_prod_rep{1,2,3}` via `setup/replicate.sh`
+- Setup + equilibration copied from template
+- Config updated: PRODUCTION_NS=500, CHUNK_NS=50, PROD_WALLTIME="24:00:00"
+- Submitted via `run.sh submit --force` (profile enforces `centos=icelake`)
+- Jobs RUNNING on A100: 972360 (rep1), 972361 (rep2), 972362 (rep3)
 
 **Production configuration:**
 - PRODUCTION_NS=500 (500 ns per replicate)
@@ -214,63 +222,9 @@ Level 3: Scientific Reproducibility Considerations
 - Expected runtime: ~13 days per replicate (with A100 congestion: ~20-30 days)
 - Expected storage: ~29 GB per replicate, ~87 GB total
 
-**Production submission command:**
+**Monitoring command:**
 ```bash
-# Create replicates
-cd ~/simulations
-bash gromacs-pipeline/setup/replicate.sh projects/blm_cmyc blm_cmyc_prod 3
-
-# Copy setup + equilibration outputs
-for p in projects/blm_cmyc_prod_rep*; do
-    mkdir -p $p/output/setup $p/output/equilibration
-    cp -a projects/blm_cmyc/output/setup/* $p/output/setup/
-    cp -a projects/blm_cmyc/output/equilibration/* $p/output/equilibration/
-done
-
-# Update config for 500 ns production
-for p in projects/blm_cmyc_prod_rep*; do
-    sed -i 's/^PRODUCTION_NS=.*/PRODUCTION_NS=500/' "$p/config.sh"
-    sed -i 's/^CHUNK_NS=.*/CHUNK_NS=50/' "$p/config.sh"
-    sed -i 's/^PROD_WALLTIME=.*/PROD_WALLTIME="24:00:00"/' "$p/config.sh"
-done
-
-# Update workflow state
-for p in projects/blm_cmyc_prod_rep*; do
-    cat > $p/.state/workflow.json << STATE
-{
-  "schema_version": 1,
-  "project": "$(basename $p)",
-  "initialized": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "phases": {
-    "setup": {"status": "completed", "job_id": ""},
-    "equilibration": {"status": "completed", "job_id": ""},
-    "production": {"status": "pending", "job_id": ""}
-  }
-}
-STATE
-done
-
-# Submit all 3 in parallel
-for p in projects/blm_cmyc_prod_rep*; do
-    bash gromacs-pipeline/run.sh submit --force "$p" &
-done
-wait
-```
-
-**Resubmission command (per replicate):**
-```bash
-cd ~/simulations/projects/<replicate_name>
-qsub -P helicases.spons -l select=1:ncpus=8:ngpus=1:centos=icelake \
-     -l walltime=24:00:00 \
-     -v PROJECT_DIR=$(pwd) \
-     scripts/production.sh
-```
-
-**To check status:**
-```bash
-qstat -u <user>
-ls -la ~/simulations/projects/blm_cmyc/output/production/
-tail -5 ~/simulations/projects/blm_cmyc/output/production/md.log
+qstat -u blz208818
 ```
 
 **After job completes, verify:**
@@ -282,58 +236,33 @@ gmx_mpi dump -cp output/production/md.cpt 2>/dev/null | grep "^t ="
 ls output/production/PRODUCTION_COMPLETE
 
 # If not complete, re-submit on A100 ONLY (never drop centos=icelake)
-cd ~/simulations/projects/blm_cmyc
+cd ~/simulations/projects/<replicate_name>
 qsub -P helicases.spons -l select=1:ncpus=8:ngpus=1:centos=icelake \
-     -l walltime=00:02:30 \
-     -v PROJECT_DIR=/home/bioschool/phd/blz208818/simulations/projects/blm_cmyc \
+     -l walltime=24:00:00 \
+     -v PROJECT_DIR=$(pwd) \
      scripts/production.sh
 ```
 
-### After Level 2 passes — real production
+### After Level 2 passes — real production (COMPLETED ✅)
 
-Once Level 2 validation completes (3 replicates independent):
+Level 2 validation completed. Production launched 2026-08-04.
 
-**Step 1: Update config for 500 ns production**
-```bash
-for p in projects/blm_kras_val_rep*; do
-    sed -i 's/^PRODUCTION_NS=.*/PRODUCTION_NS=500/' "$p/config.sh"
-    sed -i 's/^CHUNK_NS=.*/CHUNK_NS=50/' "$p/config.sh"
-    sed -i 's/^PROD_WALLTIME=.*/PROD_WALLTIME="24:00:00"/' "$p/config.sh"
-done
-```
+**What was done:**
+1. Removed broken replicate directories (blm_cmyc_prod_rep{1,2,3} — no output, no workflow.json)
+2. Re-created 3 replicates via `setup/replicate.sh projects/blm_cmyc blm_cmyc_prod 3`
+3. Copied setup + equilibration from validated template
+4. Updated config: PRODUCTION_NS=500, CHUNK_NS=50, PROD_WALLTIME="24:00:00"
+5. Set workflow state: setup=completed, equilibration=completed, production=pending
+6. Verified pre-submission checklist (all files present)
+7. Submitted via `run.sh submit --force` (profile enforces centos=icelake)
+8. Verified all 3 jobs running on A100 (aice*)
 
-**Step 2: Reset state and submit**
-```bash
-for p in projects/blm_kras_val_rep*; do
-    # Reset state to pending
-    cat > "$p/.state/workflow.json" << STATE
-{
-  "schema_version": 1,
-  "project": "$(basename $p)",
-  "initialized": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "phases": {
-    "setup": {"status": "completed", "job_id": ""},
-    "equilibration": {"status": "completed", "job_id": ""},
-    "production": {"status": "pending", "job_id": ""}
-  }
-}
-STATE
-done
-
-# Submit all 3 in parallel
-for p in projects/blm_kras_val_rep*; do
-    bash gromacs-pipeline/run.sh submit --force "$p" &
-done
-wait
-```
-
-**Step 3: Monitor**
-```bash
-# Check all replicates
-for p in projects/blm_kras_val_rep*; do
-    echo "$(basename $p): $(qstat -u blz208818 | grep production | wc -l) jobs running"
-done
-```
+**Production jobs (launched 2026-08-04):**
+| Replicate | Job ID | Node | Status |
+|-----------|--------|------|--------|
+| blm_cmyc_prod_rep1 | 972360.pbshpc | aice004 | RUNNING |
+| blm_cmyc_prod_rep2 | 972361.pbshpc | — | RUNNING |
+| blm_cmyc_prod_rep3 | 972362.pbshpc | — | RUNNING |
 
 ### Validation matrix
 
@@ -343,7 +272,7 @@ done
 | EM | ✅ Validated | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested |
 | NVT | ✅ Validated | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested |
 | NPT (Berendsen) | ✅ Validated | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested |
-| Production (chunking) | ✅ Validated (500 ps) | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested |
+| Production (chunking) | ✅ Validated (500 ps) → 🚀 Launched (500 ns × 3) | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested |
 | Walltime interruption | ✅ Validated | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested |
 | Trajectory preparation | ✅ Validated | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested |
 | Full pipeline (setup→eq→prod→prep) | ⚠️ Not tested end-to-end | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested | ⚠️ Not tested |
@@ -758,22 +687,31 @@ qstat -xf <jobid> | grep exec_host   # verify node type (csky/vsky/aice)
 
 ---
 
-## Multi-replicate production (parallel)
+## Multi-replicate production (parallel) — DEPLOYED ✅
+
+BLM-cMYC production launched 2026-08-04. 3 replicates running on A100.
 
 ```bash
-# Level 2 validation: create 3 replicates from template
-bash gromacs-pipeline/setup/replicate.sh projects/blm_cmyc blm_kras_val 3
-# → projects/blm_kras_val_rep1, _rep2, _rep3 (independent)
+# Production was launched with:
+cd ~/simulations
+bash gromacs-pipeline/setup/replicate.sh projects/blm_cmyc blm_cmyc_prod 3
 
-# Copy setup + equilibration outputs from template
-for p in projects/blm_kras_val_rep*; do
+# Copy setup + equilibration from template
+for p in projects/blm_cmyc_prod_rep*; do
     mkdir -p $p/output/setup $p/output/equilibration
     cp -a projects/blm_cmyc/output/setup/* $p/output/setup/
     cp -a projects/blm_cmyc/output/equilibration/* $p/output/equilibration/
 done
 
+# Update config for 500 ns production
+for p in projects/blm_cmyc_prod_rep*; do
+    sed -i 's/^PRODUCTION_NS=.*/PRODUCTION_NS=500/' "$p/config.sh"
+    sed -i 's/^CHUNK_NS=.*/CHUNK_NS=50/' "$p/config.sh"
+    sed -i 's/^PROD_WALLTIME=.*/PROD_WALLTIME="24:00:00"/' "$p/config.sh"
+done
+
 # Update workflow state
-for p in projects/blm_kras_val_rep*; do
+for p in projects/blm_cmyc_prod_rep*; do
     cat > $p/.state/workflow.json << STATE
 {
   "schema_version": 1,
@@ -788,17 +726,19 @@ for p in projects/blm_kras_val_rep*; do
 STATE
 done
 
-# Submit all 3 in parallel
-for p in projects/blm_kras_val_rep*; do
-  bash gromacs-pipeline/run.sh submit --force "$p" &
+# Submit all 3 in parallel (profile enforces centos=icelake)
+for p in projects/blm_cmyc_prod_rep*; do
+    bash gromacs-pipeline/run.sh submit --force "$p" &
 done
 wait
+```
 
-# Resubmit on A100 when jobs finish
-for p in projects/blm_kras_val_rep*; do
+**Resubmission (after each 24h job completes):**
+```bash
+for p in projects/blm_cmyc_prod_rep*; do
     cd "$p"
     qsub -P helicases.spons -l select=1:ncpus=8:ngpus=1:centos=icelake \
-         -l walltime=00:02:30 \
+         -l walltime=24:00:00 \
          -v PROJECT_DIR=$(pwd) \
          scripts/production.sh
     cd ..
@@ -808,6 +748,17 @@ done
 ---
 
 ## Production estimates (BLM-cMYC 500 ns × 3)
+
+### Launch data
+
+| Item | Detail |
+|------|--------|
+| Launch date | 2026-08-04 |
+| Template | projects/blm_cmyc (checkpoint 236.4 ps) |
+| Replicates | blm_cmyc_prod_rep{1,2,3} |
+| Job IDs | 972360, 972361, 972362 |
+| GPU class | A100 (centos=icelake) — enforced by profile |
+| Submission method | `run.sh submit --force` (repository workflow) |
 
 ### Runtime
 
