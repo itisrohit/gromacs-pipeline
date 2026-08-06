@@ -43,7 +43,7 @@ known pitfalls, and how to get an end-to-end run working.
 
 ## CURRENT STATUS — READ THIS FIRST (as of the last session)
 
-**Phase**: PRODUCTION IN PROGRESS 🚀. BLM-cMYC 500 ns × 3 replicates launched on A100. Jobs 972360, 972361, 972362 running.
+**Phase**: PRODUCTION IN PROGRESS 🚀. BLM-cMYC 500 ns × 3 replicates running on A100. Chunk 2 in progress (jobs 975367, 975368, 975369). Previous chunk 1 completed (jobs 973581, 973582, 973583). Initial chunk 0 completed (jobs 972360, 972361, 972362).
 
 ### Recent fixes (committed)
 1. **TPR filename mismatch** (`df3012e`): `convert-tpr -o md.tpr.tmp` created `md.tpr.tmp.tpr` (GROMACS appends `.tpr`). Fixed to use `md.tpr.tmp.tpr` consistently. Validated on HPC with real GROMACS.
@@ -204,7 +204,7 @@ Level 3: Scientific Reproducibility Considerations
 
 ### Current operational status
 
-**What we are doing right now:** PRODUCTION IN PROGRESS 🚀. BLM-cMYC 500 ns × 3 replicates launched on A100. Monitoring for completion.
+**What we are doing right now:** PRODUCTION IN PROGRESS 🚀. BLM-cMYC 500 ns × 3 replicates running on A100. Chunk 2 in progress (jobs 975367, 975368, 975369). Monitoring for completion. Need to resubmit after each 24h walltime.
 
 **Production launch (2026-08-04):**
 - Template: `projects/blm_cmyc` (setup ✅, equilibration ✅, checkpoint 236.4 ps)
@@ -212,7 +212,20 @@ Level 3: Scientific Reproducibility Considerations
 - Setup + equilibration copied from template
 - Config updated: PRODUCTION_NS=500, CHUNK_NS=50, PROD_WALLTIME="24:00:00"
 - Submitted via `run.sh submit --force` (profile enforces `centos=icelake`)
-- Jobs RUNNING on A100: 972360 (rep1), 972361 (rep2), 972362 (rep3)
+
+**Chunk history (as of 2026-08-07):**
+| Chunk | Jobs | Status | Rep1 (ns) | Rep2 (ns) | Rep3 (ns) |
+|-------|------|--------|-----------|-----------|-----------|
+| 0 (initial) | 972360, 972361, 972362 | ✅ Complete | 40.05 | 22.49 | 22.51 |
+| 1 | 973581, 973582, 973583 | ✅ Complete | 76.02 (+35.97) | 61.31 (+38.82) | 60.16 (+37.65) |
+| 2 | 975367, 975368, 975369 | 🚀 Running | 79.17 (+3.15) | 63.64 (+2.33) | 62.45 (+2.29) |
+
+**Current progress (chunk 2 in progress):**
+| Replicate | Total (ns) | % Done | Performance | Job ID |
+|-----------|-----------|--------|-------------|--------|
+| blm_cmyc_prod_rep1 | 79.17 | 15.8% | 40.4 ns/day | 975367 |
+| blm_cmyc_prod_rep2 | 63.64 | 12.7% | 43.6 ns/day | 975368 |
+| blm_cmyc_prod_rep3 | 62.45 | 12.5% | 42.3 ns/day | 975369 |
 
 **Production configuration:**
 - PRODUCTION_NS=500 (500 ns per replicate)
@@ -764,13 +777,13 @@ done
 
 | Metric | Value |
 |--------|-------|
-| Performance (baseline) | 39.3 ns/day |
-| Time per chunk (50 ns) | ~30.5 hours |
-| Jobs per replicate | ~13 (500 ns / 39 ns per 24h job) |
-| Runtime per replicate | ~13 days (312 hours) |
-| Total jobs | 39 (13 × 3 replicates) |
-| Total runtime | ~13 days (24h A100) |
-| With A100 congestion | ~20-30 days |
+| Performance (actual) | 40–44 ns/day (varies by GPU) |
+| Time per chunk (50 ns) | ~27–30 hours |
+| Jobs completed so far | 6 (2 chunks × 3 replicates) |
+| Jobs running | 3 (chunk 3) |
+| Estimated total jobs | ~39 (13 per replicate) |
+| Estimated runtime per replicate | ~13 days (24h A100 jobs) |
+| With A100 congestion | ~20–30 days |
 
 ### Storage
 
